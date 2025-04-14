@@ -1,5 +1,6 @@
 # Líbrerias
 # ==============================================================================
+import os
 import io
 import streamlit as st
 import pandas as pd
@@ -40,8 +41,11 @@ nltk.download('omw-1.4')
 import warnings
 warnings.filterwarnings('ignore')
 
-# Ruta fija del archivo Excel
-XLSX_FILE = r'D:\Proyectos\DIPRO Agent BOT\Data\RFI Data.xlsx'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Rutas relativas portables
+DATA_PATH = os.path.join(BASE_DIR, "Data", "RFI Data.xlsx")
+LOGO_PATH = os.path.join(BASE_DIR, "Imagenes", "Dipro_Logo1.png")
 
 ############################################
 # Función Principal de la Página
@@ -52,7 +56,7 @@ def createPage():
     # Función para cargar datos desde Excel (usando caché de Streamlit)
     @st.cache_data(show_spinner='Cargando Datos... Espere...', persist=True)
     def load_df():
-        df = pd.read_excel(XLSX_FILE)
+        df = pd.read_excel(DATA_PATH)
         df['Fecha/Hora de creación'] = pd.to_datetime(df['Fecha/Hora de creación'])
         # Si existe la columna "ID", se renombra a "Registro" y se usa como identificador;
         # de lo contrario, se utiliza el índice.
@@ -257,7 +261,7 @@ def createPage():
         # Aplicar limpieza a las columnas importantes
         data_limpia = limpieza_columnas_importantes(data)
         # Calcular el hash del archivo para detectar cambios en los datos
-        file_hash = get_file_hash(XLSX_FILE)
+        file_hash = get_file_hash(DATA_PATH)
         # Entrenar (generar embeddings y clustering) solo si hay cambios
         data_cluster = compute_embeddings_and_clustering(data_limpia, file_hash)
         # Calcular frecuencias por grupo y reestructurar el DataFrame final

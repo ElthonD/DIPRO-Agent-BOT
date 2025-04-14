@@ -1,6 +1,13 @@
 import streamlit as st
 import numpy as np
 from PIL import Image
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Rutas relativas portables
+
+LOGO_PATH = os.path.join(BASE_DIR, "Imagenes", "Dipro_Logo1.png")
 
 ### App de Inicio
 
@@ -10,7 +17,7 @@ def createPage():
     pathLogo = pathLogo = r'D:\Proyectos\DIPRO Agent BOT\Imagenes\Dipro_Logo1.png'
     # Abrir imagen y convertirla a RGB (3 canales)
      # Abrir imagen con canal alfa
-    img = Image.open(pathLogo).convert("RGBA")
+    img = Image.open(LOGO_PATH).convert("RGBA")
     # Convertir a numpy array
     #display = np.array(display)
     col1, col2, col3 = st.columns([1.5,1,1])
