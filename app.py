@@ -1,11 +1,17 @@
 import streamlit as st
+import os
 from PIL import Image
 from streamlit_option_menu import option_menu
 import start, analisis, chatbot # Importar páginas acá
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Rutas relativas portables
+
+FAVICON_PATH = os.path.join(BASE_DIR, "Imagenes", "Dipro_Logo.ico")
+
  #### Páginas
-path_favicon = r'D:\Proyectos\DIPRO Agent BOT\Imagenes\Dipro_Logo.png'
-im = Image.open(path_favicon)
+im = Image.open(FAVICON_PATH)
 st.set_page_config(page_title='DIPRO', page_icon=im, layout="wide")
 
 with open('style.css') as f:
