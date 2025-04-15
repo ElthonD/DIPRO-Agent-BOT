@@ -42,8 +42,10 @@ nltk.download('omw-1.4')
 import warnings
 warnings.filterwarnings('ignore')
 
-torch.classes.__path__ = [] # add this line to manually set it to empty. 
+torch.classes.__path__ = [os.path.join(torch.__path__[0], torch.classes.__file__)] 
 
+# or simply:
+torch.classes.__path__ = []
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
