@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import torch
 import pandas as pd
 import numpy as np
 from PIL import Image
@@ -15,6 +16,11 @@ from sentence_transformers import SentenceTransformer, util
 # Descargar recursos necesarios de nltk (ejecutar una sola vez)
 nltk.download('punkt')
 nltk.download('stopwords')
+
+torch.classes.__path__ = [os.path.join(torch.__path__[0], torch.classes.__file__)] 
+
+# or simply:
+torch.classes.__path__ = []
 
 os.environ["STREAMLIT_WATCHER_PATCH"] = "true"
 # Ruta base del proyecto (misma carpeta donde está este archivo .py)
