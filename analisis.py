@@ -29,6 +29,7 @@ import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 import torch
+import pickle  # Para guardar y cargar el modelo
 
 # Descargar recursos necesarios de nltk (una sola vez)
 nltk.download('punkt')
@@ -52,6 +53,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Rutas relativas portables
 DATA_PATH = os.path.join(BASE_DIR, "Data", "RFI Data.xlsx")
 LOGO_PATH = os.path.join(BASE_DIR, "Imagenes", "Dipro_Logo1.png")
+MODEL_PATH = os.path.join(BASE_DIR, "modelo.pkl")
 
 ############################################
 # Función Principal de la Página
@@ -141,6 +143,64 @@ def createPage():
         with open(file_path, 'rb') as f:
             file_bytes = f.read()
         return hashlib.md5(file_bytes).hexdigest()
+
+    def load_or_train_model(df):
+        """
+        Esta función verifica si existe un modelo persistente (almacenado en un pickle)
+        y si el hash del archivo de datos coincide con el almacenado. De ser así, carga el resultado;
+        de lo contrario, entrena el modelo (genera embeddings y ejecuta clustering) y lo guarda.
+        """
+        file_hash = get_file_hash(DATA_PATH)
+        
+        # Verificar si existe un modelo almacenado
+        if os.path.exists(MODEL_PATH):
+            try:
+                with open(MODEL_PATH, 'rb') as f:
+                    modelo_data = pickle.load(f)
+                # Verificar que el hash almacenado coincide
+                if modelo_data.get("file_hash") == file_hash:
+                    # Se ha precargado el modelo: no es necesario reentrenar
+                    return modelo_data["df_clustered"], file_hash
+            except Exception as e:
+                # Si falla la carga, se procede a reentrenar
+                print("Error al cargar el modelo persistente:", e)
+        
+        # Si se llega aquí es porque no existe modelo o se detectaron cambios: se entrena de nuevo
+        sentence_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+        
+        # Generar embeddings para la columna limpia de preguntas y respuestas
+        question_embeddings = sentence_model.encode(df['Pregunta_clean'].tolist())
+        answer_embeddings = sentence_model.encode(df['Respuesta_clean'].tolist())
+        
+        # Clustering para preguntas
+        clustering_questions = AgglomerativeClustering(
+            n_clusters=None,
+            distance_threshold=0.7,
+            metric='cosine',
+            linkage='average'
+        )
+        df['Pregunta_Group_ID'] = clustering_questions.fit_predict(question_embeddings)
+        
+        # Clustering para respuestas
+        clustering_answers = AgglomerativeClustering(
+            n_clusters=None,
+            distance_threshold=0.7,
+            metric='cosine',
+            linkage='average'
+        )
+        df['Respuesta_Group_ID'] = clustering_answers.fit_predict(answer_embeddings)
+        
+        # Se pueden incluir aquí pasos adicionales (p.ej., cálculo de frecuencias)
+        
+        # Guardar el resultado junto con el hash de datos en un diccionario
+        modelo_data = {"file_hash": file_hash, "df_clustered": df}
+        try:
+            with open(MODEL_PATH, 'wb') as f:
+                pickle.dump(modelo_data, f)
+        except Exception as e:
+            print("Error al guardar el modelo persistente:", e)
+        
+        return df, file_hash
 
     # Función que genera embeddings y realiza clustering solo cuando hay nuevos datos
     @st.cache_data(show_spinner="Entrenando modelo...", persist=True)
@@ -266,12 +326,15 @@ def createPage():
         
         # Aplicar limpieza a las columnas importantes
         data_limpia = limpieza_columnas_importantes(data)
-        # Calcular el hash del archivo para detectar cambios en los datos
-        file_hash = get_file_hash(DATA_PATH)
+
+        # Cargar o entrenar el modelo persistente (basado en el hash del archivo)
+        data_clustered, file_hash = load_or_train_model(data_limpia)
+        
         # Entrenar (generar embeddings y clustering) solo si hay cambios
-        data_cluster = compute_embeddings_and_clustering(data_limpia, file_hash)
+        #data_cluster = compute_embeddings_and_clustering(data_limpia, file_hash)
+        
         # Calcular frecuencias por grupo y reestructurar el DataFrame final
-        data_final = calculo_frecuencia_grupo(data_cluster)
+        data_final = calculo_frecuencia_grupo(data_clustered)
         final_df = reestructurar_dataframe(data_final)
         
         # Mostrar el DataFrame final
