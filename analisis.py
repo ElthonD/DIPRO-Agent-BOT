@@ -28,6 +28,7 @@ from sentence_transformers import SentenceTransformer, util
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
+import torch
 
 # Descargar recursos necesarios de nltk (una sola vez)
 nltk.download('punkt')
@@ -40,6 +41,9 @@ nltk.download('omw-1.4')
 # ==============================================================================
 import warnings
 warnings.filterwarnings('ignore')
+
+torch.classes.__path__ = [] # add this line to manually set it to empty. 
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
