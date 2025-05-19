@@ -107,8 +107,7 @@ def createPage():
     ############################################
     
     def diagrama_pareto(df):
-        
-        # Calcular la frecuencia de cada valor en la columna 'Área'
+        # Calcular la frecuencia de cada valor en la columna 'Formato'
         conteo = df['Formato'].value_counts().reset_index()
         conteo.columns = ['Formato', 'Frecuencia']
 
@@ -120,30 +119,30 @@ def createPage():
         total = conteo['Frecuencia'].sum()
         conteo['Porcentaje Acumulado'] = 100 * conteo['Acumulado'] / total
 
-        # Crear la figura de Plotly
+        # Crear la figura
         fig = go.Figure()
 
-        # Agregar el gráfico de barras para la frecuencia
+        # Barras de frecuencia
         fig.add_trace(go.Bar(
             x=conteo['Formato'],
             y=conteo['Frecuencia'],
             name='Frecuencia',
-            text=conteo["Frecuencia"],
-            textposition="outside",
+            text=conteo['Frecuencia'],
+            textposition='outside',
         ))
 
-        # Agregar el gráfico de línea para el porcentaje acumulado
+        # Línea de porcentaje acumulado (eje y2)
         fig.add_trace(go.Scatter(
             x=conteo['Formato'],
             y=conteo['Porcentaje Acumulado'],
             name='Porcentaje Acumulado',
             mode='lines+markers',
-            text=conteo["Frecuencia"],
-            textposition="top center",
+            text=conteo['Porcentaje Acumulado'].round(1).astype(str) + '%',
+            textposition='top center',
             yaxis='y2'
         ))
 
-        # Configurar el layout para tener dos ejes Y
+        # Layout con fondo transparente
         fig.update_layout(
             title='Diagrama de Pareto',
             xaxis=dict(title='Formato'),
@@ -154,11 +153,17 @@ def createPage():
                 side='right',
                 range=[0, 110]
             ),
-            legend=dict(x=0.75, y=1.15)
+            legend=dict(
+                x=0.75, 
+                y=1.15,
+                bgcolor='rgba(0,0,0,0)'   # leyenda transparente
+            ),
+            plot_bgcolor='rgba(0,0,0,0)',   # fondo del gráfico transparente
+            paper_bgcolor='rgba(0,0,0,0)'   # fondo del papel transparente
         )
-        
-        # Mostrar la gráfica
+
         fig.show()
+
     
     """
     def top_palabras_formato(df):
@@ -422,13 +427,7 @@ def createPage():
         st.dataframe(data)
         
         # Cuantificar Áreas (Formato)
-        """
-        st.markdown("<h3 style='text-align: left;'>Cuantificar Áreas (Formato)</h3>", unsafe_allow_html=True)
-        cantidad_areas = (len(data['Formato'].unique()) - 1)
-        lista_areas = data['Formato'].unique().tolist()
-        lista = lista_areas.pop(-1)
-        st.write(f"La cantidad de áreas (Formato) presentes en el documento son:" + str(cantidad_areas) + ". Las áreas (Formato) presentes son: " + str(lista_areas) + ".")
-        """
+        
         st.markdown("<h3 style='text-align: left;'>Cuantificar Áreas (Formato)</h3>", unsafe_allow_html=True)
         # Obtenemos la lista de formatos y eliminamos el último elemento (si lo necesitas)
         lista_areas = data['Formato'].unique().tolist()

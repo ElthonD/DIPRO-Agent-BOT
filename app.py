@@ -39,6 +39,6 @@ if selected=="Inicio":
 
 if selected=="Análisis":
     analisis1.createPage()
-
+"""
 if selected=="Chatbot":
-    chatbot.createPage()
+    chatbot.createPage() """
