@@ -13,6 +13,7 @@ import openpyxl
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
+import re
 
 # Para Clustering
 # ==============================================================================
@@ -173,7 +174,97 @@ def createPage():
 
         return fig
 
+    ###################################
+    # Limpieza y Tokenización del Texto
+    ###################################
 
+    def limpiar_tokenizar(texto):
+        '''
+        Esta función limpia y tokeniza el texto en palabras individuales.
+        El orden en el que se va limpiando el texto no es arbitrario.
+        El listado de signos de puntuación se ha obtenido de: print(string.punctuation)
+        y re.escape(string.punctuation)
+        '''
+        
+        # Se convierte todo el texto a minúsculas
+        nuevo_texto = texto.lower()
+        # Eliminación de páginas web (palabras que empiezan por "http")
+        nuevo_texto = re.sub('http\S+', ' ', nuevo_texto)
+        # Eliminación de signos de puntuación
+        regex = '[\\!\\"\\#\\$\\%\\&\\\'\\(\\)\\*\\+\\,\\-\\.\\/\\:\\;\\<\\=\\>\\?\\@\\[\\\\\\]\\^_\\`\\{\\|\\}\\~]'
+        nuevo_texto = re.sub(regex , ' ', nuevo_texto)
+        # Eliminación de números
+        nuevo_texto = re.sub("\d+", ' ', nuevo_texto)
+        # Eliminación de espacios en blanco múltiples
+        nuevo_texto = re.sub("\\s+", ' ', nuevo_texto)
+        # Tokenización por palabras individuales
+        nuevo_texto = nuevo_texto.split(sep = ' ')
+        # Eliminación de tokens con una longitud < 2
+        nuevo_texto = [token for token in nuevo_texto if len(token) > 1]
+        
+        return(nuevo_texto)
+    
+    ########################
+    #Frecuencia de palabras
+    ########################
+
+    # --------------------------------------------------
+    # 1) Definimos la función de resumen (tal cual antes)
+    # --------------------------------------------------
+    @st.cache_data
+    def resumen_palabras_por_formato(data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Recibe un DataFrame con columnas 'Pregunta', 'Formato' e 'ID'.
+        Requiere la función limpiar_tokenizar(texto)->List[str].
+        Devuelve un DataFrame con:
+        Formato, palabras_distintas, palabras_totales, longitud_media, desviacion
+        """
+        df = data.copy()
+        df['tokens'] = df['Pregunta'].apply(limpiar_tokenizar)
+        
+        tidy = (
+            df
+            .explode('tokens')
+            .rename(columns={'tokens': 'token'})[
+                ['Formato', 'ID', 'token']
+            ]
+        )
+        
+        total = (
+            tidy
+            .groupby('Formato')['token']
+            .count()
+            .rename('palabras_totales')
+        )
+        distintos = (
+            tidy
+            .groupby('Formato')['token']
+            .nunique()
+            .rename('palabras_distintas')
+        )
+        
+        longitudes_por_pregunta = (
+            tidy
+            .groupby(['Formato', 'ID'])['token']
+            .count()
+            .reset_index(name='num_tokens')
+        )
+        stats = (
+            longitudes_por_pregunta
+            .groupby('Formato')['num_tokens']
+            .agg(['mean', 'std'])
+            .fillna(0)
+            .rename(columns={
+                'mean': 'longitud_media',
+                'std' : 'desviacion'
+            })
+        )
+        
+        resumen = (
+            pd.concat([distintos, total, stats], axis=1)
+            .reset_index()
+        )
+        return resumen
     """
     def top_palabras_formato(df):
 
@@ -457,15 +548,61 @@ def createPage():
         # Diagrama de Pareto
         ######################
 
-        """
-        st.markdown("<h3 style='text-align: left;'>Gráfico Pareto</h3>", unsafe_allow_html=True)
-        pareto_areas1 = diagrama_pareto(data)
-        """
         st.markdown("<h3>Gráfico Pareto</h3>", unsafe_allow_html=True)
         fig_pareto = diagrama_pareto(data)
         st.plotly_chart(fig_pareto, use_container_width=True)
 
+        ########################
+        # Frecuencia de Palabras
+        ########################
+
+        df_resumen = resumen_palabras_por_formato(data)
+    
+        # Mostrar tabla
+        st.subheader("Comprender las Preguntas del RFI")
+        st.dataframe(df_resumen, use_container_width=True)
+        
+        # Opcional: gráfico de barras de palabras totales vs distintas
+        st.subheader("Gráfica Comparativa")
+        chart = (
+            df_resumen
+            .set_index('Formato')[['palabras_totales','palabras_distintas']]
+            .sort_values('palabras_totales', ascending=False)
+        )
+        st.bar_chart(chart)
+
         """
+
+        # Se aplica la función de limpieza y tokenización a cada pregunta
+        # ==============================================================================
+        data['preguntaRFI_tokenizado'] = data['Pregunta'].apply(lambda x: limpiar_tokenizar(x))
+
+        # Unnest de la columna texto_tokenizado
+        # ==============================================================================
+        preguntaRFI_tokenizado_tidy = data.explode(column='preguntaRFI_tokenizado')
+        preguntaRFI_tokenizado_tidy = preguntaRFI_tokenizado_tidy.drop(columns='Pregunta')
+        preguntaRFI_tokenizado_tidy = preguntaRFI_tokenizado_tidy.rename(columns={'preguntaRFI_tokenizado':'token'})
+
+        # Palabras totales utilizadas en las Preguntas FDI por cada Área
+        # ==============================================================================
+        print('--------------------------')
+        print('Palabras totales por área (Formato)')
+        print('--------------------------')
+        preguntaRFI_tokenizado_tidy.groupby(by='Formato')['token'].count()
+
+        # Palabras distintas utilizadas en las Preguntas FDI por cada Área
+        # ==============================================================================
+        print('----------------------------')
+        print('Palabras distintas por área (Formato)')
+        print('----------------------------')
+        preguntaRFI_tokenizado_tidy.groupby(by='Formato')['token'].nunique()
+        
+        # # Longitud media y desviación de las preguntas FDI de cada Área (Formato)
+        # ==============================================================================
+        temp_df = pd.DataFrame(preguntaRFI_tokenizado_tidy.groupby(by = ["Formato", "ID"])["token"].count())
+        temp_df.reset_index().groupby("Formato")["token"].agg(['mean', 'std']).fillna(0)  
+
+        
         # Aplicar limpieza a las columnas importantes
         data_limpia = limpieza_columnas_importantes(data)
 
