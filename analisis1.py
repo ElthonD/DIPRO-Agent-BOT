@@ -162,8 +162,7 @@ def createPage():
             paper_bgcolor='rgba(0,0,0,0)'   # fondo del papel transparente
         )
 
-        fig.show()
-
+        return fig
     
     """
     def top_palabras_formato(df):
@@ -447,10 +446,15 @@ def createPage():
         ######################
         # Diagrama de Pareto
         ######################
-        
+
+        """
         st.markdown("<h3 style='text-align: left;'>Gráfico Pareto</h3>", unsafe_allow_html=True)
         pareto_areas1 = diagrama_pareto(data)
-        
+        """
+        st.markdown("<h3>Gráfico Pareto</h3>", unsafe_allow_html=True)
+        fig_pareto = diagrama_pareto(data)
+        st.plotly_chart(fig_pareto, use_container_width=True)
+
         """
         # Aplicar limpieza a las columnas importantes
         data_limpia = limpieza_columnas_importantes(data)
