@@ -106,7 +106,6 @@ def createPage():
     # Función para Diagrama de Pareto (80-20)
     ############################################
    
-
     def diagrama_pareto(df):
         # Calcular la frecuencia de cada valor en la columna 'Formato'
         conteo = df['Formato'].value_counts().reset_index()
@@ -132,45 +131,48 @@ def createPage():
             textposition='outside',
         ))
 
-        # Línea de porcentaje acumulado (eje y2)
+        # Línea de porcentaje acumulado con etiquetas
         fig.add_trace(go.Scatter(
             x=conteo['Formato'],
             y=conteo['Porcentaje Acumulado'],
             name='Porcentaje Acumulado',
-            mode='lines+markers',
+            mode='lines+markers+text',                   # <-- agregamos '+text'
             text=conteo['Porcentaje Acumulado'].round(1).astype(str) + '%',
             textposition='top center',
+            texttemplate='%{text}',                      # usamos el texto formateado
+            textfont=dict(size=12),                      # opcional: ajustar tamaño
             yaxis='y2'
         ))
 
         # Layout con fondo transparente y sin rejillas
         fig.update_layout(
             title='Diagrama de Pareto',
-            height=700, 
-            plot_bgcolor='rgba(0,0,0,0)',    # transparente
-            paper_bgcolor='rgba(0,0,0,0)',   # transparente
+            height=600,                                  # opcional: ajustar altura
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
             legend=dict(bgcolor='rgba(0,0,0,0)'),
-
             xaxis=dict(
                 title='Formato',
-                showgrid=False,    # quita líneas verticales
-                zeroline=False     # quita la línea de cero
+                showgrid=False,
+                zeroline=False
             ),
             yaxis=dict(
                 title='Frecuencia',
-                showgrid=False,    # quita líneas horizontales
+                showgrid=False,
                 zeroline=False
             ),
             yaxis2=dict(
                 title='Porcentaje Acumulado (%)',
                 overlaying='y',
                 side='right',
-                showgrid=False,    # sin rejillas en secundario
+                showgrid=False,
                 zeroline=False,
                 range=[0, 110]
             )
         )
+
         return fig
+
 
     """
     def top_palabras_formato(df):
