@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from PIL import Image
 from streamlit_option_menu import option_menu
-import start, analisis, chatbot # Importar páginas acá
+import start, analisis1, chatbot # Importar páginas acá
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -38,7 +38,7 @@ if selected=="Inicio":
     start.createPage()
 
 if selected=="Análisis":
-    analisis.createPage()
+    analisis1.createPage()
 
 if selected=="Chatbot":
     chatbot.createPage()
