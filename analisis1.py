@@ -441,11 +441,12 @@ def createPage():
             f"Las áreas (Formato) presentes son: {areas_str}."
         )
 
-        """
+        
         # Diagrama de Pareto
         st.markdown("<h3 style='text-align: left;'>Gráfico Pareto</h3>", unsafe_allow_html=True)
         pareto_areas1 = diagrama_pareto(data)
-
+        
+        """
         # Aplicar limpieza a las columnas importantes
         data_limpia = limpieza_columnas_importantes(data)
 
