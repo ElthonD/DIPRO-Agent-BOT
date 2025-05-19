@@ -214,7 +214,7 @@ def createPage():
     @st.cache_data
     def resumen_palabras_por_formato(data: pd.DataFrame) -> pd.DataFrame:
         """
-        Recibe un DataFrame con columnas 'Pregunta', 'Formato' e 'ID'.
+        Recibe un DataFrame con columnas 'Pregunta', 'Formato' e 'Registro'.
         Requiere la función limpiar_tokenizar(texto)->List[str].
         Devuelve un DataFrame con:
         Formato, palabras_distintas, palabras_totales, longitud_media, desviacion
@@ -226,7 +226,7 @@ def createPage():
             df
             .explode('tokens')
             .rename(columns={'tokens': 'token'})[
-                ['Formato', 'ID', 'token']
+                ['Formato', 'Registro', 'token']
             ]
         )
         
@@ -245,7 +245,7 @@ def createPage():
         
         longitudes_por_pregunta = (
             tidy
-            .groupby(['Formato', 'ID'])['token']
+            .groupby(['Formato', 'Registro'])['token']
             .count()
             .reset_index(name='num_tokens')
         )
