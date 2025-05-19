@@ -105,7 +105,8 @@ def createPage():
     #############################################
     # Función para Diagrama de Pareto (80-20)
     ############################################
-    
+   
+
     def diagrama_pareto(df):
         # Calcular la frecuencia de cada valor en la columna 'Formato'
         conteo = df['Formato'].value_counts().reset_index()
@@ -142,28 +143,34 @@ def createPage():
             yaxis='y2'
         ))
 
-        # Layout con fondo transparente
+        # Layout con fondo transparente y sin rejillas
         fig.update_layout(
             title='Diagrama de Pareto',
-            xaxis=dict(title='Formato'),
-            yaxis=dict(title='Frecuencia'),
+            plot_bgcolor='rgba(0,0,0,0)',    # transparente
+            paper_bgcolor='rgba(0,0,0,0)',   # transparente
+            legend=dict(bgcolor='rgba(0,0,0,0)'),
+
+            xaxis=dict(
+                title='Formato',
+                showgrid=False,    # quita líneas verticales
+                zeroline=False     # quita la línea de cero
+            ),
+            yaxis=dict(
+                title='Frecuencia',
+                showgrid=False,    # quita líneas horizontales
+                zeroline=False
+            ),
             yaxis2=dict(
                 title='Porcentaje Acumulado (%)',
                 overlaying='y',
                 side='right',
+                showgrid=False,    # sin rejillas en secundario
+                zeroline=False,
                 range=[0, 110]
-            ),
-            legend=dict(
-                x=0.75, 
-                y=1.15,
-                bgcolor='rgba(0,0,0,0)'   # leyenda transparente
-            ),
-            plot_bgcolor='rgba(0,0,0,0)',   # fondo del gráfico transparente
-            paper_bgcolor='rgba(0,0,0,0)'   # fondo del papel transparente
+            )
         )
-
         return fig
-    
+
     """
     def top_palabras_formato(df):
 
