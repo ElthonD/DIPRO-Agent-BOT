@@ -10,7 +10,6 @@ import numpy as np
 import string
 import hashlib
 import openpyxl
-import xlsxwriter
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
