@@ -13,6 +13,7 @@ import openpyxl
 import xlsxwriter
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
 
 # Para Clustering
 # ==============================================================================
@@ -60,7 +61,6 @@ MODEL_PATH = os.path.join(BASE_DIR, "modelo.pkl")
 ############################################
 
 def createPage():
-    
     
     ############################################
     # Función para extraer las iniciales
@@ -160,9 +160,26 @@ def createPage():
         
         # Mostrar la gráfica
         fig.show()
+    
 
-   
-        
+    def top_palabras_formato(df):
+
+        # Top 10 palabras por autor (sin stopwords)
+        # ==============================================================================
+        fig, axs = plt.subplots(nrows=10, ncols=1,figsize=(12, 20))
+        for i, formato in enumerate(df.Formato.unique()):
+            df_temp = df[df.Formato == formato]
+            counts  = df_temp['token'].value_counts(ascending=False).head(10)
+            counts.plot(kind='barh', color='blue', ax=axs[i])
+            axs[i].invert_yaxis()
+            axs[i].set_title(formato)
+
+        #font = {'size'   : 10}
+
+        #plt.rc('font', **font)
+        fig.tight_layout()
+
+
     ############################################
     # Funciones Auxiliares para el Preprocesado
     ############################################
@@ -203,7 +220,7 @@ def createPage():
         # Agregar las stopwords más comunes extraídas del archivo
         stop_words.update(common_stopwords)
         # También se pueden agregar palabras adicionales manualmente
-        stop_words.update(("amp", "xa", "xe", "plano", "indica", "proyecto", "si", "apoyo", "área", "favor", "acuerdo", "detalle", "solicita", "rfi", "area", "si", "existente", "buena", "oc", "cm", "aunado", "indicar", "referente", "trabajos", "tarde", "solicito", "cambio", "hallazgo", "adjunta", "producto", "nuevo", "solicitamos", "indiquen", "ser", "confirmar", "embargo", "procede", "ie", "indicarnos", "realizar", "confirmar", "procede"))
+        stop_words.update(("amp", "xa", "xe", "plano", "indica", "proyecto", "si", "apoyo", "área", "favor", "acuerdo", "detalle", "solicita", "rfi", "area", "si", "existente", "buena", "oc", "cm", "aunado", "indicar", "referente", "trabajos", "tarde", "solicito", "cambio", "hallazgo", "adjunta", "producto", "nuevo", "solicitamos", "indiquen", "ser", "confirmar", "embargo", "procede", "ie", "indicarnos", "realizar", "confirmar", "procede", "de", "la", "se", "en", "el", "cual", "debe", "quedo","parte"))
         #stop_words.update(("amp", "xa", "xe", "Buenos", "días", "tardes", "noches", ...))
         tokens = [token for token in tokens if token not in stop_words and token not in string.punctuation]
         return " ".join(tokens)
@@ -416,7 +433,6 @@ def createPage():
         st.markdown("<h3 style='text-align: left;'>Gráfico Pareto</h3>", unsafe_allow_html=True)
         pareto_areas1 = diagrama_pareto(data)
 
-        """
         # Aplicar limpieza a las columnas importantes
         data_limpia = limpieza_columnas_importantes(data)
 
@@ -456,7 +472,7 @@ def createPage():
         # Mostrar la gráfica en Streamlit
         #st.markdown("<h3 style='text-align: left;'>Grupos que representan el 80% de las consultas:</h3>", unsafe_allow_html=True)
         #st.plotly_chart(fig, use_container_width=True)
-        """
+     
     except Exception as e:
         st.error("Error al procesar el archivo 'Data RFI.xlsx'.")
         st.error(str(e))
