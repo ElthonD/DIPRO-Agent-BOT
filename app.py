@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from PIL import Image
 from streamlit_option_menu import option_menu
-import start, analisis1, chatbot # Importar páginas acá
+import start, analisis1 # chatbot  Importar páginas acá
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -17,12 +17,12 @@ st.set_page_config(page_title='DIPRO', page_icon=im, layout="wide")
 with open('style.css') as f:
     st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
-v_menu=["Inicio", "Análisis", "Chatbot"]
+v_menu=["Inicio", "Análisis"] #"Chatbot"]
 
 selected = option_menu(
     menu_title=None,  # required
-    options=["Inicio", "Análisis", "Chatbot"],  # required 
-    icons=["house", "graph-up", "robot"],  # optional
+    options=["Inicio", "Análisis"], # "Chatbot"],  # required 
+    icons=["house", "graph-up"], # "robot"],  # optional
     menu_icon="cast",  # optional
     default_index=0,  # optional
     orientation="horizontal",
@@ -39,6 +39,7 @@ if selected=="Inicio":
 
 if selected=="Análisis":
     analisis1.createPage()
+
 """
 if selected=="Chatbot":
     chatbot.createPage() """
