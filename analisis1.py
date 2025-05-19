@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 import re
+import plotly.express as px
 
 # Para Clustering
 # ==============================================================================
@@ -564,14 +565,20 @@ def createPage():
         
         # Opcional: gráfico de barras de palabras totales vs distintas
         st.subheader("Gráfica Comparativa")
+        fig = px.bar(
+        df_resumen.set_index('Formato')[['palabras_totales','palabras_distintas']],
+        barmode='group',
+        height=700,       # altura en píxeles
+        labels={'index':'Formato','value':'Conteo','variable':'Métrica'}
+    )
+        """
+        st.plotly_chart(fig, use_container_width=True)
         chart = (
             df_resumen
             .set_index('Formato')[['palabras_totales','palabras_distintas']]
             .sort_values('palabras_totales', ascending=False)
         )
         st.bar_chart(chart)
-
-        """
 
         # Se aplica la función de limpieza y tokenización a cada pregunta
         # ==============================================================================
