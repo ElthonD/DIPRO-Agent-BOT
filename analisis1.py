@@ -309,54 +309,54 @@ def createPage():
     # Stopwords 
     ############
 
-    def mostrar_top_palabras_por_formato(df,
-                                        formato_col: str = 'Formato',
-                                        token_col: str = 'token',
-                                        idioma: str = 'spanish',
-                                        extras: list = None,
-                                        top_n: int = 10):
+    def render_top10_words_by_format(data):
         """
-        Muestra en Streamlit un gráfico con las top_n palabras por cada formato,
-        excluyendo stopwords del idioma dado más una lista de palabras extra.
+        Render top 10 most frequent tokens per 'Formato' category in a Streamlit app.
+        Args:
+            data (pd.DataFrame): DataFrame with at least 'Pregunta' and 'Formato' columns.
         """
-        # 1. Construir listado de stopwords
-        stop_words = set(stopwords.words(idioma))
-        if extras is None:
-            extras = [
-                "amp", "xa", "xe", "plano", "indica", "proyecto", "si",
-                "apoyo", "área", "favor", "acuerdo", "detalle", "solicita",
-                "rfi", "area", "existente", "buena", "oc", "cm", "aunado",
-                "indicar", "referente", "trabajos", "tarde", "solicito",
-                "cambio", "hallazgo", "adjunta", "producto", "nuevo",
-                "solicitamos", "indiquen", "ser", "confirmar", "embargo",
-                "procede", "ie", "indicarnos", "realizar", "de", "la", "se",
-                "en", "el", "cual", "debe", "quedo", "parte"
-            ]
-        stop_words.update(extras)
+        # Tokenización
+        data['preguntaRFI_tokenizado'] = data['Pregunta'].apply(limpiar_tokenizar)
 
-        # 2. Filtrar tokens
-        df_filtrado = df[~df[token_col].isin(stop_words)]
+        # Unnest y renombrar
+        df_tidy = (
+            data
+            .explode('preguntaRFI_tokenizado')
+            .drop(columns='Pregunta')
+            .rename(columns={'preguntaRFI_tokenizado': 'token'})
+        )
 
-        # 3. Preparar figura según número de formatos
-        formatos = df_filtrado[formato_col].unique()
-        filas = len(formatos)
-        altura = filas * 2  # 2" por subplot, ajustable
-        fig, axs = plt.subplots(nrows=filas, ncols=1, figsize=(12, altura))
-        if filas == 1:
+        # Definir stopwords
+        stop_words = set(stopwords.words('spanish'))
+        stop_words.update([
+            "amp","xa","xe","plano","indica","proyecto","si","apoyo","área","favor",
+            "acuerdo","detalle","solicita","rfi","area","existente","buena","oc","cm",
+            "aunado","indicar","referente","trabajos","tarde","solicito","cambio","hallazgo",
+            "adjunta","producto","nuevo","solicitamos","indiquen","ser","confirmar","embargo",
+            "procede","ie","indicarnos","realizar","de","la","se","en","el","cual","debe",
+            "quedo","parte"
+        ])
+
+        # Filtrar stopwords
+        df_tidy = df_tidy[~df_tidy['token'].isin(stop_words)]
+
+        # Preparar gráfico
+        formatos = df_tidy['Formato'].unique()
+        n_formats = len(formatos)
+        fig, axs = plt.subplots(nrows=n_formats, ncols=1, figsize=(12, 4*n_formats))
+        # Asegurar que axs sea iterable
+        if n_formats == 1:
             axs = [axs]
 
-        # 4. Dibujar cada subplot
-        for ax, fmt in zip(axs, formatos):
-            sub = df_filtrado[df_filtrado[formato_col] == fmt]
-            conteos = sub[token_col].value_counts().head(top_n)
-            conteos.plot.barh(ax=ax)
+        for ax, formato in zip(axs, formatos):
+            df_temp = df_tidy[df_tidy['Formato'] == formato]
+            counts = df_temp['token'].value_counts().head(10)
+            counts.plot(kind='barh', ax=ax)
             ax.invert_yaxis()
-            ax.set_title(fmt, pad=8)
+            ax.set_title(formato)
 
         fig.tight_layout()
-
-        # 5. Mostrar en Streamlit
-        st.pyplot(fig)
+        st.pyplot(fig)  
 
 
     """
@@ -703,9 +703,20 @@ def createPage():
         ###################
        
         st.title("Top 10 palabras por Formato (Sin Stopwords)")
-        mostrar_top_palabras_por_formato(data)
+        render_top10_words_by_format(data)
 
         """
+        # Se aplica la función de limpieza y tokenización a cada pregunta
+        # ==============================================================================
+        data['preguntaRFI_tokenizado'] = data['Pregunta'].apply(lambda x: limpiar_tokenizar(x))
+
+        # Unnest de la columna texto_tokenizado
+        # ==============================================================================
+        preguntaRFI_tokenizado_tidy = data.explode(column='preguntaRFI_tokenizado')
+        preguntaRFI_tokenizado_tidy = preguntaRFI_tokenizado_tidy.drop(columns='Pregunta')
+        preguntaRFI_tokenizado_tidy = preguntaRFI_tokenizado_tidy.rename(columns={'preguntaRFI_tokenizado':'token'})
+
+        
         # Obtención de listado de stopwords del español
         # ==============================================================================
         stop_words = list(stopwords.words('spanish'))
