@@ -146,6 +146,7 @@ def createPage():
         # Layout con fondo transparente y sin rejillas
         fig.update_layout(
             title='Diagrama de Pareto',
+            height=700, 
             plot_bgcolor='rgba(0,0,0,0)',    # transparente
             paper_bgcolor='rgba(0,0,0,0)',   # transparente
             legend=dict(bgcolor='rgba(0,0,0,0)'),
