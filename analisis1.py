@@ -311,7 +311,8 @@ def createPage():
 
     def render_top10_words_by_format(data):
         """
-        Render top 10 most frequent tokens per 'Formato' category in a Streamlit app.
+        Render top 10 most frequent tokens per 'Formato' category in a Streamlit app,
+        without gridlines and with transparent background.
         Args:
             data (pd.DataFrame): DataFrame with at least 'Pregunta' and 'Formato' columns.
         """
@@ -344,16 +345,24 @@ def createPage():
         formatos = df_tidy['Formato'].unique()
         n_formats = len(formatos)
         fig, axs = plt.subplots(nrows=n_formats, ncols=1, figsize=(12, 4*n_formats))
-        # Asegurar que axs sea iterable
         if n_formats == 1:
             axs = [axs]
+
+        # Hacer transparente el fondo de la figura
+        fig.patch.set_alpha(0.0)
 
         for ax, formato in zip(axs, formatos):
             df_temp = df_tidy[df_tidy['Formato'] == formato]
             counts = df_temp['token'].value_counts().head(10)
+
+            # Plot sin rejillas
             counts.plot(kind='barh', ax=ax)
             ax.invert_yaxis()
             ax.set_title(formato)
+
+            # Quitar rejillas y hacer fondo transparente
+            ax.grid(False)
+            ax.set_facecolor('none')
 
         fig.tight_layout()
         st.pyplot(fig)  
