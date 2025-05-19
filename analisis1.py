@@ -266,6 +266,45 @@ def createPage():
             .reset_index()
         )
         return resumen
+    #####################################
+    # Palabras más frecuentes por Formato
+    #####################################  
+    def generar_top_tokens_por_formato(data: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
+        """
+        Toma un DataFrame con al menos las columnas 'Pregunta' y 'Formato',
+        tokeniza las preguntas, cuenta la frecuencia de cada token por Formato
+        y devuelve un DataFrame con los top_n tokens más frecuentes para cada Formato.
+        """
+        # 1) Tokenización
+        data = data.copy()
+        data['preguntaRFI_tokenizado'] = data['Pregunta'].apply(limpiar_tokenizar)
+
+        # 2) Unnest / explode
+        df_tidy = (
+            data
+            .explode(column='preguntaRFI_tokenizado')
+            .drop(columns='Pregunta')
+            .rename(columns={'preguntaRFI_tokenizado': 'token'})
+        )
+
+        # 3) Conteo de tokens por Formato
+        df_counts = (
+            df_tidy
+            .groupby(['Formato', 'token'])
+            .size()
+            .reset_index(name='count')
+        )
+
+        # 4) Seleccionar los top_n por Formato
+        df_top = (
+            df_counts
+            .sort_values(['Formato', 'count'], ascending=[True, False])
+            .groupby('Formato')
+            .head(top_n)
+            .reset_index(drop=True)
+        )
+        return df_top
+    
     """
     def top_palabras_formato(df):
 
@@ -588,38 +627,23 @@ def createPage():
         )
 
         st.plotly_chart(fig, use_container_width=True)
+        st.write("El tipo de pregunta FDI en los formatos de Bodega Aurrera y Walmart Supercenter similares en cuanto a longitud media y desviación. STD = 0 ⇾ no hay dispersión en los datos que estás agrupando (uno o todos iguales).")
         
+        #######################################################################
+        # Top 5 Palabras más utilizadas en las preguntas por cada Área (Formato)
+        #######################################################################
+        
+        st.title("Top 5 Tokens por Formato")
+    
+        # Asume que 'data' ya está cargado, por ejemplo:
+        # data = pd.read_excel("Data RFI.xlsx")
+        
+        df_top_tokens = generar_top_tokens_por_formato(data, top_n=5)
+        
+        # Mostrar la tabla en Streamlit
+        st.table(df_top_tokens)
+
         """
-        # Se aplica la función de limpieza y tokenización a cada pregunta
-        # ==============================================================================
-        data['preguntaRFI_tokenizado'] = data['Pregunta'].apply(lambda x: limpiar_tokenizar(x))
-
-        # Unnest de la columna texto_tokenizado
-        # ==============================================================================
-        preguntaRFI_tokenizado_tidy = data.explode(column='preguntaRFI_tokenizado')
-        preguntaRFI_tokenizado_tidy = preguntaRFI_tokenizado_tidy.drop(columns='Pregunta')
-        preguntaRFI_tokenizado_tidy = preguntaRFI_tokenizado_tidy.rename(columns={'preguntaRFI_tokenizado':'token'})
-
-        # Palabras totales utilizadas en las Preguntas FDI por cada Área
-        # ==============================================================================
-        print('--------------------------')
-        print('Palabras totales por área (Formato)')
-        print('--------------------------')
-        preguntaRFI_tokenizado_tidy.groupby(by='Formato')['token'].count()
-
-        # Palabras distintas utilizadas en las Preguntas FDI por cada Área
-        # ==============================================================================
-        print('----------------------------')
-        print('Palabras distintas por área (Formato)')
-        print('----------------------------')
-        preguntaRFI_tokenizado_tidy.groupby(by='Formato')['token'].nunique()
-        
-        # # Longitud media y desviación de las preguntas FDI de cada Área (Formato)
-        # ==============================================================================
-        temp_df = pd.DataFrame(preguntaRFI_tokenizado_tidy.groupby(by = ["Formato", "ID"])["token"].count())
-        temp_df.reset_index().groupby("Formato")["token"].agg(['mean', 'std']).fillna(0)  
-
-        
         # Aplicar limpieza a las columnas importantes
         data_limpia = limpieza_columnas_importantes(data)
 
