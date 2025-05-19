@@ -563,23 +563,33 @@ def createPage():
         st.subheader("Comprender las Preguntas del RFI")
         st.dataframe(df_resumen, use_container_width=True)
         
-        # Opcional: gráfico de barras de palabras totales vs distintas
-        st.subheader("Gráfica Comparativa")
-        fig = px.bar(
-        df_resumen.set_index('Formato')[['palabras_totales','palabras_distintas']],
-        barmode='group',
-        height=700,       # altura en píxeles
-        labels={'index':'Formato','value':'Conteo','variable':'Métrica'}
-    )
-        """
-        st.plotly_chart(fig, use_container_width=True)
+    
+        st.subheader("Gráfica comparativa")
+        # Tu DataFrame ya preparado:
         chart = (
             df_resumen
             .set_index('Formato')[['palabras_totales','palabras_distintas']]
             .sort_values('palabras_totales', ascending=False)
+            .reset_index()
         )
-        st.bar_chart(chart)
 
+        # Creamos el bar chart con altura personalizada:
+        fig = px.bar(
+            chart,
+            x='Formato',
+            y=['palabras_totales','palabras_distintas'],
+            barmode='group',
+            height=700,                # aquí ajustas la altura en píxeles
+            labels={
+                'value': 'Conteo',
+                'variable': 'Métrica',
+                'Formato': 'Formato'
+            }
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+        
+        """
         # Se aplica la función de limpieza y tokenización a cada pregunta
         # ==============================================================================
         data['preguntaRFI_tokenizado'] = data['Pregunta'].apply(lambda x: limpiar_tokenizar(x))
