@@ -421,13 +421,16 @@ def createPage():
         3. Calcular la frecuencia por grupo y reestructurar el DataFrame final.
         4. Exportar el resultado a Excel y realizar un análisis exploratorio (Pareto).
         """)
-        
+        ################
         # Carga de Data
+        ################
         st.markdown("<h3 style='text-align: left;'>Data</h3>", unsafe_allow_html=True)
         st.dataframe(data)
         
+        #############################
         # Cuantificar Áreas (Formato)
-        
+        #############################
+
         st.markdown("<h3 style='text-align: left;'>Cuantificar Áreas (Formato)</h3>", unsafe_allow_html=True)
         # Obtenemos la lista de formatos y eliminamos el último elemento (si lo necesitas)
         lista_areas = data['Formato'].unique().tolist()
@@ -441,8 +444,10 @@ def createPage():
             f"Las áreas (Formato) presentes son: {areas_str}."
         )
 
-        
+        ######################
         # Diagrama de Pareto
+        ######################
+        
         st.markdown("<h3 style='text-align: left;'>Gráfico Pareto</h3>", unsafe_allow_html=True)
         pareto_areas1 = diagrama_pareto(data)
         
