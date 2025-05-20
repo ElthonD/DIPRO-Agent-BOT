@@ -1,195 +1,139 @@
-import streamlit as st
 import os
-import torch
-import pandas as pd
-import numpy as np
-from PIL import Image
 import string
 import hashlib
 import pickle
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+from PIL import Image
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from sentence_transformers import SentenceTransformer, util
+import faiss
 
+# ─── Configuración de rutas ──────────────────────────────────────────────────
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH   = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
+LOGO_PATH   = os.path.join(BASE_DIR, "Imagenes", "Dipro_Logo1.png")
+CACHE_DIR   = os.path.join(BASE_DIR, "cache")
+EMB_CACHE   = os.path.join(CACHE_DIR, "embeddings_cache.pkl")
+IDX_CACHE   = os.path.join(CACHE_DIR, "faiss.index")
+DF_CACHE    = os.path.join(CACHE_DIR, "data_rfi.pkl")
 
-# Descargar recursos necesarios de nltk (ejecutar una sola vez)
-nltk.download('punkt')
-nltk.download('stopwords')
+# ─── Asegurar carpeta de cache ────────────────────────────────────────────────
+def ensure_cache_dir():
+    os.makedirs(CACHE_DIR, exist_ok=True)
 
-torch.classes.__path__ = [os.path.join(torch.__path__[0], torch.classes.__file__)] 
+# ─── NLP Preprocesado ─────────────────────────────────────────────────────────
+nltk.download('punkt', quiet=True)
+nltk.download('stopwords', quiet=True)
+_spanish_stop = set(stopwords.words("spanish"))
 
-# or simply:
-torch.classes.__path__ = []
+def preprocess_text(text: str) -> str:
+    text = text.lower()
+    tokens = word_tokenize(text, language='spanish')
+    tokens = [t for t in tokens if t not in _spanish_stop and t not in string.punctuation]
+    return " ".join(tokens)
 
-os.environ["STREAMLIT_WATCHER_PATCH"] = "true"
-# Ruta base del proyecto (misma carpeta donde está este archivo .py)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# ─── Hash del archivo para invalidar cache ────────────────────────────────────
+def file_md5(path: str) -> str:
+    with open(path, 'rb') as f:
+        return hashlib.md5(f.read()).hexdigest()
 
-# Rutas relativas portables
-DATA_PATH = os.path.join(BASE_DIR, "Data", "RFI Data.xlsx")
-LOGO_PATH = os.path.join(BASE_DIR, "Imagenes", "Dipro_Logo1.png")
-CACHE_PATH = os.path.join(BASE_DIR, "embeddings_cache.pkl")
+# ─── Carga / cache del DataFrame ─────────────────────────────────────────────
+def load_or_cache_df() -> pd.DataFrame:
+    ensure_cache_dir()
+    if os.path.exists(DF_CACHE):
+        df = pd.read_pickle(DF_CACHE)
+    else:
+        df = pd.read_excel(DATA_PATH).dropna(subset=['Pregunta','Respuesta'])
+        df['Pregunta_proc'] = df['Pregunta'].map(preprocess_text)
+        df.to_pickle(DF_CACHE)
+    return df
 
+# ─── Modelo de embeddings ────────────────────────────────────────────────────
+@st.cache_resource(show_spinner=False)
+def get_embedding_model() -> SentenceTransformer:
+    return SentenceTransformer("all-mpnet-base-v2")  # más preciso que miniLM
 
-def createPage():
+# ─── Carga / cálculo de embeddings con cache MD5 ─────────────────────────────
+def load_or_compute_embeddings(df: pd.DataFrame, model: SentenceTransformer) -> np.ndarray:
+    ensure_cache_dir()
+    current_hash = file_md5(DATA_PATH)
+    if os.path.exists(EMB_CACHE):
+        cache = pickle.load(open(EMB_CACHE, 'rb'))
+        if cache.get('hash') == current_hash:
+            st.info("🔄 Cargando embeddings desde cache")
+            return cache['embeddings']
+    # si no hay cache o cambió el archivo:
+    st.info("⚙️ Generando nuevos embeddings por cambio en Data RFI")
+    embeddings = model.encode(df['Pregunta_proc'].tolist(), convert_to_numpy=True, normalize_embeddings=True).astype('float32')
+    pickle.dump({'hash': current_hash, 'embeddings': embeddings}, open(EMB_CACHE, 'wb'))
+    return embeddings
 
-    # Title of the main page
-    #pathLogo = pathLogo = r'D:\Proyectos\DIPRO Agent BOT\Imagenes\Dipro_Logo1.png'
-    # Abrir imagen y convertirla a RGB (3 canales)
-     # Abrir imagen con canal alfa
+# ─── Carga / construcción de índice FAISS ─────────────────────────────────────
+def load_or_build_index(embeddings: np.ndarray) -> faiss.IndexFlatL2:
+    ensure_cache_dir()
+    if os.path.exists(IDX_CACHE):
+        index = faiss.read_index(IDX_CACHE)
+    else:
+        dim = embeddings.shape[1]
+        index = faiss.IndexFlatL2(dim)
+        index.add(embeddings)
+        faiss.write_index(index, IDX_CACHE)
+    return index
+
+# ─── Recuperación de respuesta más similar ───────────────────────────────────
+def retrieve_answer(query: str,
+                    df: pd.DataFrame,
+                    model: SentenceTransformer,
+                    index: faiss.IndexFlatL2) -> str:
+    q_proc = preprocess_text(query)
+    q_emb  = model.encode([q_proc], convert_to_numpy=True, normalize_embeddings=True).astype('float32')
+    D, I   = index.search(q_emb, 1)
+    idx    = int(I[0][0])
+    score  = 1 - D[0][0]  # similitud aproximada
+    if score < 0.5:
+        return "Lo siento, no tengo una respuesta precisa para esa pregunta."
+    return df.iloc[idx]['Respuesta']
+
+# ─── Interfaz Streamlit ───────────────────────────────────────────────────────
+def main():
+    st.set_page_config(page_title="ChatBot DIPRO", layout="wide")
+    # Logo
     img = Image.open(LOGO_PATH).convert("RGBA")
-    # Convertir a numpy array
-    #display = np.array(display)
     col1, col2, col3 = st.columns([1.5,1,1])
     with col2:
-        st.image(img, use_container_width=False)
+        st.image(img, width=150)
 
-    #############################
-    # Funciones de Preprocesamiento
-    #############################
+    st.title("🤖 ChatBot DIPRO (sin uploader)")
+    st.write("Escribe tu pregunta en el campo y recibirás la respuesta histórica más relevante.")
 
-    def preprocess_text(text):
-        """
-        Convierte el texto a minúsculas, tokeniza y elimina stopwords y signos de puntuación.
-        """
-        text = text.lower()
-        tokens = word_tokenize(text, language='spanish')
-        stop_words = set(stopwords.words("spanish"))
-        tokens = [token for token in tokens if token not in stop_words and token not in string.punctuation]
-        return " ".join(tokens)
-    
-    #############################
-    # Funciones para Cargar Datos
-    #############################
+    # Carga datos + modelo + embeddings + índice
+    df        = load_or_cache_df()
+    model     = get_embedding_model()
+    embeddings= load_or_compute_embeddings(df, model)
+    index     = load_or_build_index(embeddings)
+    st.success(f"Modelo listo con {len(df)} pares Pregunta/Respuesta")
 
-    @st.cache_data(show_spinner=False)
-    def load_data():
-        """
-        Carga los datos del Excel, extrae las columnas y preprocesa las preguntas.
-        """
-        #xlsx_data = r'D:\Proyectos\DIPRO Agent BOT\Data\RFI Data.xlsx'
-        df = pd.read_excel(DATA_PATH)
-        preguntas_raw = df["Pregunta del RFI"].tolist()
-        respuestas = df["Respuesta"].tolist()
-        preguntas_preprocesadas = [preprocess_text(p) for p in preguntas_raw]
-        return preguntas_raw, respuestas, preguntas_preprocesadas
+    # Chat
+    if 'history' not in st.session_state:
+        st.session_state.history = []
 
-    #############################
-    # Funciones para el Modelo y Embeddings
-    #############################
-
-    @st.cache_resource(show_spinner=False)
-    def load_model():
-        """
-        Carga el modelo de SentenceTransformer.
-        Se utiliza "all-MiniLM-L6-v2", un modelo compacto y eficiente para tareas de similitud semántica.
-        """
-        model = SentenceTransformer("all-MiniLM-L6-v2")
-        return model
-
-    def get_file_hash(file_path):
-        """
-        Calcula y retorna el hash MD5 del archivo en modo binario.
-        """
-        with open(file_path, 'rb') as f:
-            file_bytes = f.read()
-        return hashlib.md5(file_bytes).hexdigest()
-    
-    def load_embeddings_cache(cache_path="embeddings_cache.pkl"):
-        """
-        Carga la cache de embeddings si existe.
-        """
-        if os.path.exists(cache_path):
-            with open(cache_path, 'rb') as f:
-                cache = pickle.load(f)
-            return cache
-        return None
-
-    def save_embeddings_cache(embeddings, file_hash, cache_path="embeddings_cache.pkl"):
-        """
-        Guarda en cache los embeddings junto con el hash del archivo.
-        """
-        cache = {
-        "file_hash": file_hash,
-        "embeddings": embeddings
-        }
-        with open(cache_path, 'wb') as f:
-            pickle.dump(cache, f)
-
-    def get_embeddings_with_cache(model, preguntas_preprocesadas, data_file="RFI Data.xlsx", cache_path="embeddings_cache.pkl"):
-        """
-        Genera los embeddings de las preguntas preprocesadas utilizando una cache persistente:
-        - Si el hash del archivo coincide con el de la cache, se cargan los embeddings precomputados.
-        - Si hay cambios en el archivo, se generan nuevos embeddings y se actualiza la cache.
-        """
-        current_hash = get_file_hash(data_file)
-        cache = load_embeddings_cache(cache_path)
-        
-        if cache is not None and cache.get("file_hash") == current_hash:
-            embeddings = cache.get("embeddings")
-            st.info("Cargando embeddings desde la cache.")
+    pregunta = st.text_input("Tu pregunta:")
+    if st.button("Enviar"):
+        if pregunta.strip():
+            respuesta = retrieve_answer(pregunta, df, model, index)
+            st.session_state.history.append((pregunta, respuesta))
         else:
-            st.info("Generando nuevos embeddings por cambios en los datos.")
-            embeddings = model.encode(preguntas_preprocesadas, convert_to_tensor=True)
-            save_embeddings_cache(embeddings, current_hash, cache_path)
-        return embeddings
+            st.warning("Escribe algo primero…")
 
-    @st.cache_data(show_spinner=False)
-    def get_embeddings(_model, preguntas_preprocesadas, model_name: str):
-        """
-        Genera los embeddings de las preguntas preprocesadas utilizando el modelo.
-        Usa `model_name` para que Streamlit pueda invalidar el cache si se cambia de modelo.
-        """
-        embeddings = _model.encode(preguntas_preprocesadas, convert_to_tensor=True)
-        return embeddings
+    for q, a in st.session_state.history:
+        st.markdown(f"**Tú:** {q}")
+        st.markdown(f"**Bot:** {a}")
+        st.markdown("---")
 
-    #############################
-    # Función para Obtener Respuesta
-    #############################
-
-    def obtener_respuesta(pregunta_usuario, modelo, embeddings_preguntas, respuestas, umbral=0.6):
-        """
-        Preprocesa la pregunta del usuario, genera su embedding y calcula la similitud
-        con cada una de las preguntas históricas para recuperar la respuesta asociada.
-        """
-        pregunta_proc = preprocess_text(pregunta_usuario)
-        embedding_usuario = modelo.encode(pregunta_proc, convert_to_tensor=True)
-        similitudes = util.cos_sim(embedding_usuario, embeddings_preguntas)[0]
-        indice_mejor = int(np.argmax(similitudes))
-        puntaje_similitud = similitudes[indice_mejor].item()
-        
-        if puntaje_similitud < umbral:
-            return "Lo siento, no tengo una respuesta precisa para esa pregunta."
-        return respuestas[indice_mejor]
-   
-
-   #############################
-    # ChatBot
-    #############################
-
-    st.title("ChatBot DIPRO")
-    st.write("Bienvenido al ***Chatbot de DIPRO***. Ingrese una pregunta o escriba 'salir' para terminar la sesión.")
-
-     # Cargar datos (preguntas y respuestas)
-    preguntas_raw, respuestas, preguntas_preprocesadas = load_data()
-    
-    # Cargar el modelo de SentenceTransformer
-    modelo = load_model()
-    
-    # Obtener los embeddings utilizando la cache si es posible
-    embeddings_preguntas = get_embeddings_with_cache(modelo, preguntas_preprocesadas, data_file=DATA_PATH, cache_path=CACHE_PATH)
-
-    st.success("Datos, modelo y embeddings cargados correctamente.")
-    
-    # Campo de entrada para la pregunta del usuario (la respuesta se actualiza automáticamente)
-    pregunta_usuario = st.text_input("Escribe tu pregunta:")
-    
-    if pregunta_usuario:
-        respuesta = obtener_respuesta(pregunta_usuario, modelo, embeddings_preguntas, respuestas)
-        st.markdown("**Respuesta:**")
-        st.write(respuesta)
-        
-    else:st.warning("Por favor, escribe una pregunta.")
-
-    return True
+if __name__ == "__main__":
+    main()

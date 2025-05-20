@@ -13,6 +13,9 @@ import openpyxl
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
+import re
+import plotly.express as px
+from scipy.spatial.distance import cosine
 
 # Para Clustering
 # ==============================================================================
@@ -105,10 +108,9 @@ def createPage():
     #############################################
     # Función para Diagrama de Pareto (80-20)
     ############################################
-    
+   
     def diagrama_pareto(df):
-        
-        # Calcular la frecuencia de cada valor en la columna 'Área'
+        # Calcular la frecuencia de cada valor en la columna 'Formato'
         conteo = df['Formato'].value_counts().reset_index()
         conteo.columns = ['Formato', 'Frecuencia']
 
@@ -120,75 +122,356 @@ def createPage():
         total = conteo['Frecuencia'].sum()
         conteo['Porcentaje Acumulado'] = 100 * conteo['Acumulado'] / total
 
-        # Crear la figura de Plotly
+        # Crear la figura
         fig = go.Figure()
 
-        # Agregar el gráfico de barras para la frecuencia
+        # Barras de frecuencia
         fig.add_trace(go.Bar(
             x=conteo['Formato'],
             y=conteo['Frecuencia'],
             name='Frecuencia',
-            text=conteo["Frecuencia"],
-            textposition="outside",
+            text=conteo['Frecuencia'],
+            textposition='outside',
         ))
 
-        # Agregar el gráfico de línea para el porcentaje acumulado
+        # Línea de porcentaje acumulado con etiquetas
         fig.add_trace(go.Scatter(
             x=conteo['Formato'],
             y=conteo['Porcentaje Acumulado'],
             name='Porcentaje Acumulado',
-            mode='lines+markers',
-            text=conteo["Frecuencia"],
-            textposition="top center",
+            mode='lines+markers+text',                   # <-- agregamos '+text'
+            text=conteo['Porcentaje Acumulado'].round(1).astype(str) + '%',
+            textposition='top center',
+            texttemplate='%{text}',                      # usamos el texto formateado
+            textfont=dict(size=12),                      # opcional: ajustar tamaño
             yaxis='y2'
         ))
 
-        # Configurar el layout para tener dos ejes Y
+        # Layout con fondo transparente y sin rejillas
         fig.update_layout(
             title='Diagrama de Pareto',
-            xaxis=dict(title='Formato'),
-            yaxis=dict(title='Frecuencia'),
+            height=600,                                  # opcional: ajustar altura
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            legend=dict(bgcolor='rgba(0,0,0,0)'),
+            xaxis=dict(
+                title='Formato',
+                showgrid=False,
+                zeroline=False
+            ),
+            yaxis=dict(
+                title='Frecuencia',
+                showgrid=False,
+                zeroline=False
+            ),
             yaxis2=dict(
                 title='Porcentaje Acumulado (%)',
                 overlaying='y',
                 side='right',
+                showgrid=False,
+                zeroline=False,
                 range=[0, 110]
-            ),
-            legend=dict(x=0.75, y=1.15)
+            )
+        )
+
+        return fig
+
+    ###################################
+    # Limpieza y Tokenización del Texto
+    ###################################
+
+    def limpiar_tokenizar(texto):
+        '''
+        Esta función limpia y tokeniza el texto en palabras individuales.
+        El orden en el que se va limpiando el texto no es arbitrario.
+        El listado de signos de puntuación se ha obtenido de: print(string.punctuation)
+        y re.escape(string.punctuation)
+        '''
+        
+        # Se convierte todo el texto a minúsculas
+        nuevo_texto = texto.lower()
+        # Eliminación de páginas web (palabras que empiezan por "http")
+        nuevo_texto = re.sub('http\S+', ' ', nuevo_texto)
+        # Eliminación de signos de puntuación
+        regex = '[\\!\\"\\#\\$\\%\\&\\\'\\(\\)\\*\\+\\,\\-\\.\\/\\:\\;\\<\\=\\>\\?\\@\\[\\\\\\]\\^_\\`\\{\\|\\}\\~]'
+        nuevo_texto = re.sub(regex , ' ', nuevo_texto)
+        # Eliminación de números
+        nuevo_texto = re.sub("\d+", ' ', nuevo_texto)
+        # Eliminación de espacios en blanco múltiples
+        nuevo_texto = re.sub("\\s+", ' ', nuevo_texto)
+        # Tokenización por palabras individuales
+        nuevo_texto = nuevo_texto.split(sep = ' ')
+        # Eliminación de tokens con una longitud < 2
+        nuevo_texto = [token for token in nuevo_texto if len(token) > 1]
+        
+        return(nuevo_texto)
+    
+    ########################
+    #Frecuencia de palabras
+    ########################
+
+    # --------------------------------------------------
+    # 1) Definimos la función de resumen (tal cual antes)
+    # --------------------------------------------------
+    @st.cache_data
+    def resumen_palabras_por_formato(data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Recibe un DataFrame con columnas 'Pregunta', 'Formato' e 'Registro'.
+        Requiere la función limpiar_tokenizar(texto)->List[str].
+        Devuelve un DataFrame con:
+        Formato, palabras_distintas, palabras_totales, longitud_media, desviacion
+        """
+        df = data.copy()
+        df['tokens'] = df['Pregunta'].apply(limpiar_tokenizar)
+        
+        tidy = (
+            df
+            .explode('tokens')
+            .rename(columns={'tokens': 'token'})[
+                ['Formato', 'Registro', 'token']
+            ]
         )
         
-        # Mostrar la gráfica
-        fig.show()
+        total = (
+            tidy
+            .groupby('Formato')['token']
+            .count()
+            .rename('palabras_totales')
+        )
+        distintos = (
+            tidy
+            .groupby('Formato')['token']
+            .nunique()
+            .rename('palabras_distintas')
+        )
+        
+        longitudes_por_pregunta = (
+            tidy
+            .groupby(['Formato', 'Registro'])['token']
+            .count()
+            .reset_index(name='num_tokens')
+        )
+        stats = (
+            longitudes_por_pregunta
+            .groupby('Formato')['num_tokens']
+            .agg(['mean', 'std'])
+            .fillna(0)
+            .rename(columns={
+                'mean': 'longitud_media',
+                'std' : 'desviacion'
+            })
+        )
+        
+        resumen = (
+            pd.concat([distintos, total, stats], axis=1)
+            .reset_index()
+        )
+        return resumen
+    #####################################
+    # Palabras más frecuentes por Formato
+    #####################################  
+    def generar_top_tokens_por_formato(data: pd.DataFrame, top_n: int = 5) -> pd.DataFrame:
+        """
+        Toma un DataFrame con al menos las columnas 'Pregunta' y 'Formato',
+        tokeniza las preguntas, cuenta la frecuencia de cada token por Formato
+        y devuelve un DataFrame con los top_n tokens más frecuentes para cada Formato.
+        """
+        # 1) Tokenización
+        data = data.copy()
+        data['preguntaRFI_tokenizado'] = data['Pregunta'].apply(limpiar_tokenizar)
+
+        # 2) Unnest / explode
+        df_tidy = (
+            data
+            .explode(column='preguntaRFI_tokenizado')
+            .drop(columns='Pregunta')
+            .rename(columns={'preguntaRFI_tokenizado': 'token'})
+        )
+
+        # 3) Conteo de tokens por Formato
+        df_counts = (
+            df_tidy
+            .groupby(['Formato', 'token'])
+            .size()
+            .reset_index(name='count')
+        )
+
+        # 4) Seleccionar los top_n por Formato
+        df_top = (
+            df_counts
+            .sort_values(['Formato', 'count'], ascending=[True, False])
+            .groupby('Formato')
+            .head(top_n)
+            .reset_index(drop=True)
+        )
+        return df_top
+    
+    ############
+    # Stopwords 
+    ############
+
+    def render_top10_words_by_format(data):
+        """
+        Render top 10 most frequent tokens per 'Formato' category in a Streamlit app,
+        without gridlines and with transparent background.
+        Args:
+            data (pd.DataFrame): DataFrame with at least 'Pregunta' and 'Formato' columns.
+        """
+        # Tokenización
+        data['preguntaRFI_tokenizado'] = data['Pregunta'].apply(limpiar_tokenizar)
+
+        # Unnest y renombrar
+        df_tidy = (
+            data
+            .explode('preguntaRFI_tokenizado')
+            .drop(columns='Pregunta')
+            .rename(columns={'preguntaRFI_tokenizado': 'token'})
+        )
+
+        # Definir stopwords
+        stop_words = set(stopwords.words('spanish'))
+        stop_words.update([
+            "amp","xa","xe","plano","indica","proyecto","si","apoyo","área","favor",
+            "acuerdo","detalle","solicita","rfi","area","existente","buena","oc","cm",
+            "aunado","indicar","referente","trabajos","tarde","solicito","cambio","hallazgo",
+            "adjunta","producto","nuevo","solicitamos","indiquen","ser","confirmar","embargo",
+            "procede","ie","indicarnos","realizar","de","la","se","en","el","cual","debe",
+            "quedo","parte"
+        ])
+
+        # Filtrar stopwords
+        df_tidy = df_tidy[~df_tidy['token'].isin(stop_words)]
+
+        # Preparar gráfico
+        formatos = df_tidy['Formato'].unique()
+        n_formats = len(formatos)
+        fig, axs = plt.subplots(nrows=n_formats, ncols=1, figsize=(12, 4*n_formats))
+        if n_formats == 1:
+            axs = [axs]
+
+        # Hacer transparente el fondo de la figura
+        fig.patch.set_alpha(0.0)
+
+        for ax, formato in zip(axs, formatos):
+            df_temp = df_tidy[df_tidy['Formato'] == formato]
+            counts = df_temp['token'].value_counts().head(10)
+
+            # Plot sin rejillas
+            counts.plot(kind='barh', ax=ax)
+            ax.invert_yaxis()
+            ax.set_title(formato)
+
+            # Quitar rejillas y hacer fondo transparente
+            ax.grid(False)
+            ax.set_facecolor('none')
+
+        fig.tight_layout()
+        st.pyplot(fig)  
+
+    ############################
+    #Función de similitud coseno
+    ############################
+
+    def similitud_coseno(a, b):
+        return 1 - cosine(a, b) 
+
+    ##################
+    #Pivotado cacheado
+    ##################
+
+    @st.cache_data(show_spinner=False)
+    def pivot_tokens(df: pd.DataFrame) -> pd.DataFrame:
+        # Aplica limpieza/tokenización (asume que limpiar_tokenizar ya está definida)
+        df = df.copy()
+        df['tokens'] = df['Pregunta'].apply(limpiar_tokenizar)
+        tidy = (
+            df
+            .explode('tokens')
+            .drop(columns='Pregunta')
+            .rename(columns={'tokens': 'token'})
+        )
+        pivot = (
+            tidy
+            .groupby(['Formato', 'token'])['token']
+            .count()
+            .reset_index(name='count')
+            .pivot(index='token', columns='Formato', values='count')
+        )
+        pivot.columns.name = None
+        return pivot
+
+    #######################
+    #Gráfico de correlación
+    #######################
+
+    def plot_correlacion(df: pd.DataFrame):
+        st.header("Gráfico de Correlación Interactiva")
+        pivot = pivot_tokens(df)
+        formatos = list(pivot.columns)
+
+        if len(formatos) < 2:
+            st.warning("Se requieren al menos 2 formatos distintos para graficar.")
+            return
+
+        # Selectboxes para elegir ejes
+        col1, col2 = st.columns(2)
+        with col1:
+            eje_x = st.selectbox("Eje X (Formato)", formatos, index=0)
+        with col2:
+            eje_y = st.selectbox("Eje Y (Formato)", formatos, index=1)
+
+        # Filtrar y limpiar NA
+        temp = pivot[[eje_x, eje_y]].dropna()
+        if temp.empty:
+            st.warning("No hay datos comunes entre los dos formatos seleccionados.")
+            return
+
+        # Calcular coeficiente de correlación por coseno
+        coef = similitud_coseno(temp[eje_x].values, temp[eje_y].values)
+        st.write(f"**Coeficiente de correlación (coseno):** {coef:.3f}")
+
+        # Gráfico
+        fig, ax = plt.subplots(figsize=(12, 10))
+        # Log-transform +1 para evitar log(0)
+        x_vals = np.log(temp[eje_x] + 1)
+        y_vals = np.log(temp[eje_y] + 1)
+        sns.regplot(x=x_vals, y=y_vals, scatter_kws={'alpha': 0.05}, ax=ax)
+
+        # Anotaciones en muestra aleatoria de hasta 100 puntos
+        n_pts = min(100, len(temp))
+        indices = np.random.choice(len(temp), n_pts, replace=False)
+        for idx in indices:
+            palabra = temp.index[idx]
+            ax.annotate(
+                palabra,
+                xy=(x_vals.iloc[idx], y_vals.iloc[idx]),
+                alpha=0.7,
+                fontsize=8
+            )
+
+        ax.set_xlabel(f"Log({eje_x} + 1)")
+        ax.set_ylabel(f"Log({eje_y} + 1)")
+        ax.set_title(f"Correlación entre «{eje_x}» y «{eje_y}»")
+        ax.grid(False)  # Quitar rejillas
+
+        st.pyplot(fig)
+
+
+
     
 
-    def top_palabras_formato(df):
-
-        # Top 10 palabras por autor (sin stopwords)
-        # ==============================================================================
-        fig, axs = plt.subplots(nrows=10, ncols=1,figsize=(12, 20))
-        for i, formato in enumerate(df.Formato.unique()):
-            df_temp = df[df.Formato == formato]
-            counts  = df_temp['token'].value_counts(ascending=False).head(10)
-            counts.plot(kind='barh', color='blue', ax=axs[i])
-            axs[i].invert_yaxis()
-            axs[i].set_title(formato)
-
-        #font = {'size'   : 10}
-
-        #plt.rc('font', **font)
-        fig.tight_layout()
-
+    """
 
     ############################################
     # Funciones Auxiliares para el Preprocesado
     ############################################
 
     def extract_common_stopwords(df, col1="Pregunta", col2="Respuesta", top_n=10):
-        """
-        Extrae de las columnas especificadas los tokens que ya se
-        encuentran en la lista de stopwords de nltk y retorna una lista
-        de las 'top_n' stopwords más comunes.
-        """
+        
+        #Extrae de las columnas especificadas los tokens que ya se
+        #encuentran en la lista de stopwords de nltk y retorna una lista
+        #de las 'top_n' stopwords más comunes.
+        
         # Concatenar el contenido de ambas columnas (omitiendo valores nulos)
         text = " ".join(df[col1].dropna().astype(str).tolist() + df[col2].dropna().astype(str).tolist()).lower()
         tokens = word_tokenize(text, language="spanish")
@@ -238,11 +521,11 @@ def createPage():
         return hashlib.md5(file_bytes).hexdigest()
 
     def load_or_train_model(df):
-        """
+        
         Esta función verifica si existe un modelo persistente (almacenado en un pickle)
         y si el hash del archivo de datos coincide con el almacenado. De ser así, carga el resultado;
         de lo contrario, entrena el modelo (genera embeddings y ejecuta clustering) y lo guarda.
-        """
+        
         file_hash = get_file_hash(DATA_PATH)
         
         # Verificar si existe un modelo almacenado
@@ -342,70 +625,8 @@ def createPage():
             writer.close()
         processed_data = output.getvalue()
         return processed_data
-
-    # Función para realizar un análisis Pareto y mostrar resultados en Streamlit
-    def analisis_pareto(df):
-        n_dudas = df['Pregunta_Group_ID'].nunique()
-        n_respuestas = df['Respuesta_Group_ID'].nunique()
-        st.write(f"Número total de dudas distintas (grupos de preguntas): {n_dudas}")
-        st.write(f"Número total de grupos de respuestas distintas: {n_respuestas}")
-        freq_preg = df.groupby('Pregunta_Group_ID').size().reset_index(name='Count')
-        freq_preg = freq_preg.sort_values(by='Count', ascending=False)
-        freq_preg['Cumsum'] = freq_preg['Count'].cumsum()
-        freq_preg['Cumulative_Percent'] = freq_preg['Cumsum'] / freq_preg['Count'].sum()
-        st.markdown("<h3 style='text-align: left;'>Distribución de las frecuencias de las dudas</h3>", unsafe_allow_html=True)
-        st.dataframe(freq_preg, hide_index=True)
-        top_80 = freq_preg[freq_preg['Cumulative_Percent'] <= 0.8]
-        #st.markdown("<h3 style='text-align: left;'>Grupos que representan el 80% de las consultas:</h3>", unsafe_allow_html=True)
-        #st.dataframe(top_80)
-        return freq_preg
-
-    def plot_pareto_chart(freq_preg):
-   
-        # Crear la figura con eje secundario para el acumulado
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
         
-        # Agregar la gráfica de barras para la frecuencia
-        fig.add_trace(
-            go.Bar(
-                x=freq_preg['Pregunta_Group_ID'],
-                y=freq_preg['Count'],
-                name="Frecuencia",
-                hovertemplate="Grupo: %{x}<br>Frecuencia: %{y}<extra></extra>"
-            ),
-            secondary_y=False,
-        )
-        
-        # Agregar la línea para el porcentaje acumulado
-        fig.add_trace(
-            go.Scatter(
-                x=freq_preg['Pregunta_Group_ID'],
-                y=freq_preg['Cumulative_Percent'] * 100,
-                name="Acumulado (%)",
-                mode="lines+markers",
-                hovertemplate="Grupo: %{x}<br>Acumulado: %{y:.2f}%<extra></extra>"
-            ),
-            secondary_y=True,
-        )
-        
-        # Actualizar el layout y forzar el orden del eje x según el array de los group_id ordenados por frecuencia
-        fig.update_layout(
-            title="Gráfica Pareto de las dudas (Preguntas)",
-            xaxis_title="Grupo (ordenado de mayor a menor frecuencia)",
-            yaxis_title="Frecuencia",
-            template="plotly_white",
-            legend=dict(x=0.75, y=1.15),
-            xaxis=dict(
-                categoryorder="array",
-                categoryarray=freq_preg['Pregunta_Group_ID'].tolist()  # Orden personalizado
-            )
-        )
-        
-        # Configurar el eje secundario para el porcentaje acumulado
-        fig.update_yaxes(title_text="Porcentaje Acumulado (%)", secondary_y=True)
-        
-        return fig
-
+    """
 
     try:
         st.markdown("<h3 style='text-align: left;'>Análisis de la Data</h3>", unsafe_allow_html=True)
@@ -416,62 +637,103 @@ def createPage():
         3. Calcular la frecuencia por grupo y reestructurar el DataFrame final.
         4. Exportar el resultado a Excel y realizar un análisis exploratorio (Pareto).
         """)
-        
+        ################
         # Carga de Data
+        ################
         st.markdown("<h3 style='text-align: left;'>Data</h3>", unsafe_allow_html=True)
         st.dataframe(data)
         
+        #############################
         # Cuantificar Áreas (Formato)
+        #############################
+
         st.markdown("<h3 style='text-align: left;'>Cuantificar Áreas (Formato)</h3>", unsafe_allow_html=True)
-        cantidad_areas = (len(data['Formato'].unique()) - 1)
+        # Obtenemos la lista de formatos y eliminamos el último elemento (si lo necesitas)
         lista_areas = data['Formato'].unique().tolist()
-        lista = lista_areas.pop(-1)
-        st.write(f"La cantidad de áreas (Formato) presentes en el documento son:" + str(cantidad_areas) + ". Las áreas (Formato) presentes son: " + str(lista_areas) + ".")
-        
+        lista_areas.pop(-1)
+        # Cantidad de áreas
+        cantidad_areas = len(lista_areas)
+        # Convertimos la lista a una cadena separada por comas
+        areas_str = ", ".join(map(str, lista_areas))
+        st.write(
+            f"La cantidad de áreas (Formato) presentes en el documento son: {cantidad_areas}. "
+            f"Las áreas (Formato) presentes son: {areas_str}."
+        )
+
+        ######################
         # Diagrama de Pareto
-        st.markdown("<h3 style='text-align: left;'>Gráfico Pareto</h3>", unsafe_allow_html=True)
-        pareto_areas1 = diagrama_pareto(data)
+        ######################
 
-        # Aplicar limpieza a las columnas importantes
-        data_limpia = limpieza_columnas_importantes(data)
+        st.markdown("<h3>Gráfico Pareto</h3>", unsafe_allow_html=True)
+        fig_pareto = diagrama_pareto(data)
+        st.plotly_chart(fig_pareto, use_container_width=True)
 
-        # Cargar o entrenar el modelo persistente (basado en el hash del archivo)
-        data_clustered, file_hash = load_or_train_model(data_limpia)
+        ########################
+        # Frecuencia de Palabras
+        ########################
+
+        df_resumen = resumen_palabras_por_formato(data)
+    
+        # Mostrar tabla
+        st.subheader("Comprender las Preguntas del RFI")
+        st.dataframe(df_resumen, use_container_width=True)
         
-        # Entrenar (generar embeddings y clustering) solo si hay cambios
-        #data_cluster = compute_embeddings_and_clustering(data_limpia, file_hash)
-        
-        # Calcular frecuencias por grupo y reestructurar el DataFrame final
-        data_final = calculo_frecuencia_grupo(data_clustered)
-        final_df = reestructurar_dataframe(data_final)
-        
-        # Mostrar el DataFrame final
-        st.dataframe(final_df, hide_index=True)
-        
-        # Convertir a Excel en memoria y proporcionar botón de descarga (botón centrado)
-        excel_data = convertir_a_excel(final_df)
-        c1, c2, c3 = st.columns([1, 1, 1])
-        with c2:
-            st.download_button(
-                label="Descargar Excel",
-                data=excel_data,
-                file_name="RFI_Data_Analizado.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            
-        # Análisis Pareto
-        #analisis_pareto(final_df)
+    
+        st.subheader("Gráfica comparativa")
+        # Tu DataFrame ya preparado:
+        chart = (
+            df_resumen
+            .set_index('Formato')[['palabras_totales','palabras_distintas']]
+            .sort_values('palabras_totales', ascending=False)
+            .reset_index()
+        )
 
-        # Ejecutar la función analisis_pareto para obtener la distribución
-        freq_preg = analisis_pareto(final_df)
+        # Creamos el bar chart con altura personalizada:
+        fig = px.bar(
+            chart,
+            x='Formato',
+            y=['palabras_totales','palabras_distintas'],
+            barmode='group',
+            height=700,                # aquí ajustas la altura en píxeles
+            labels={
+                'value': 'Conteo',
+                'variable': 'Métrica',
+                'Formato': 'Formato'
+            }
+        )
 
-        # Generar la gráfica Pareto con Plotly
-        #fig = plot_pareto_chart(freq_preg)
+        st.plotly_chart(fig, use_container_width=True)
+        st.write("El tipo de pregunta FDI en los formatos de Bodega Aurrera y Walmart Supercenter similares en cuanto a longitud media y desviación. STD = 0 ⇾ no hay dispersión en los datos que estás agrupando (uno o todos iguales).")
+        
+        #######################################################################
+        # Top 5 Palabras más utilizadas en las preguntas por cada Área (Formato)
+        #######################################################################
+        
+        st.title("Top 5 Tokens por Formato")
+    
+        # Asume que 'data' ya está cargado, por ejemplo:
+        # data = pd.read_excel("Data RFI.xlsx")
+        
+        df_top_tokens = generar_top_tokens_por_formato(data, top_n=5)
+        
+        # Mostrar la tabla en Streamlit
+        #st.table(df_top_tokens)
+        st.dataframe(df_top_tokens, use_container_width=True)
 
-        # Mostrar la gráfica en Streamlit
-        #st.markdown("<h3 style='text-align: left;'>Grupos que representan el 80% de las consultas:</h3>", unsafe_allow_html=True)
-        #st.plotly_chart(fig, use_container_width=True)
-     
+        ###################
+        # StopWords
+        ###################
+       
+        st.title("Top 10 palabras por Formato (Sin Stopwords)")
+        render_top10_words_by_format(data)
+
+        ####################################
+        # Correlación entre Formatos (Áreas)
+        ####################################
+        
+        st.title("Gráfico de Correlación entre Formatos (Áreas)")
+        plot_correlacion(data)
+
     except Exception as e:
         st.error("Error al procesar el archivo 'Data RFI.xlsx'.")
         st.error(str(e))
