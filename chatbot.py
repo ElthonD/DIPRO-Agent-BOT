@@ -103,7 +103,7 @@ def retrieve_answer(query: str,
 
 # ─── Página principal ────────────────────────────────────────────────────────
 def createPage():
-    st.set_page_config(page_title="ChatBot DIPRO", layout="wide")
+    #st.set_page_config(page_title="ChatBot DIPRO", layout="wide")
 
     # Logo
     img = Image.open(LOGO_PATH).convert("RGBA")
