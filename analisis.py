@@ -405,7 +405,6 @@ def createPage():
     #######################
 
     def plot_correlacion(df: pd.DataFrame):
-        st.header("Gráfico de Correlación Interactiva")
         pivot = pivot_tokens(df)
         formatos = list(pivot.columns)
 
@@ -455,178 +454,6 @@ def createPage():
         ax.grid(False)  # Quitar rejillas
 
         st.pyplot(fig)
-
-
-
-    
-
-    """
-
-    ############################################
-    # Funciones Auxiliares para el Preprocesado
-    ############################################
-
-    def extract_common_stopwords(df, col1="Pregunta", col2="Respuesta", top_n=10):
-        
-        #Extrae de las columnas especificadas los tokens que ya se
-        #encuentran en la lista de stopwords de nltk y retorna una lista
-        #de las 'top_n' stopwords más comunes.
-        
-        # Concatenar el contenido de ambas columnas (omitiendo valores nulos)
-        text = " ".join(df[col1].dropna().astype(str).tolist() + df[col2].dropna().astype(str).tolist()).lower()
-        tokens = word_tokenize(text, language="spanish")
-        # Filtrar para excluir puntuación
-        tokens = [token for token in tokens if token not in string.punctuation]
-        # Obtener la lista por defecto de stopwords en español
-        default_stopwords = set(stopwords.words("spanish"))
-        # Seleccionar solo los tokens que ya sean stopwords
-        stopword_tokens = [token for token in tokens if token in default_stopwords]
-        
-        from collections import Counter
-        counter = Counter(stopword_tokens)
-        common_stop = [word for word, count in counter.most_common(top_n)]
-        return common_stop
-
-    # Extraer automáticamente las stopwords más comunes de las columnas de interés
-    common_stopwords = extract_common_stopwords(data, col1="Pregunta", col2="Respuesta", top_n=10)
-    #st.write("Stopwords más comunes extraídas:", common_stopwords)
-    
-    # Función para preprocesar texto: minúsculas, tokenización y eliminación de stopwords y puntuación
-    def preprocess_text(text):
-        if not isinstance(text, str):
-            text = str(text)
-        text = text.lower()
-        tokens = word_tokenize(text, language='spanish')
-        # Obtener el conjunto de stopwords por defecto
-        stop_words = set(stopwords.words("spanish"))
-        # Agregar las stopwords más comunes extraídas del archivo
-        stop_words.update(common_stopwords)
-        # También se pueden agregar palabras adicionales manualmente
-        stop_words.update(("amp", "xa", "xe", "plano", "indica", "proyecto", "si", "apoyo", "área", "favor", "acuerdo", "detalle", "solicita", "rfi", "area", "si", "existente", "buena", "oc", "cm", "aunado", "indicar", "referente", "trabajos", "tarde", "solicito", "cambio", "hallazgo", "adjunta", "producto", "nuevo", "solicitamos", "indiquen", "ser", "confirmar", "embargo", "procede", "ie", "indicarnos", "realizar", "confirmar", "procede", "de", "la", "se", "en", "el", "cual", "debe", "quedo","parte"))
-        #stop_words.update(("amp", "xa", "xe", "Buenos", "días", "tardes", "noches", ...))
-        tokens = [token for token in tokens if token not in stop_words and token not in string.punctuation]
-        return " ".join(tokens)
-
-    # Limpieza de columnas importantes: se agregan las versiones limpias de preguntas y respuestas
-    def limpieza_columnas_importantes(df):
-        df['Pregunta_clean'] = df['Pregunta'].apply(preprocess_text)
-        # Asegurarse de que la columna de respuestas se llame correctamente (puede ser "Respuestas" o "Respuesta")
-        df['Respuesta_clean'] = df['Respuesta'].apply(preprocess_text)
-        return df
-
-    # Función que calcula el hash MD5 del archivo para detectar cambios
-    def get_file_hash(file_path):
-        with open(file_path, 'rb') as f:
-            file_bytes = f.read()
-        return hashlib.md5(file_bytes).hexdigest()
-
-    def load_or_train_model(df):
-        
-        Esta función verifica si existe un modelo persistente (almacenado en un pickle)
-        y si el hash del archivo de datos coincide con el almacenado. De ser así, carga el resultado;
-        de lo contrario, entrena el modelo (genera embeddings y ejecuta clustering) y lo guarda.
-        
-        file_hash = get_file_hash(DATA_PATH)
-        
-        # Verificar si existe un modelo almacenado
-        if os.path.exists(MODEL_PATH):
-            try:
-                with open(MODEL_PATH, 'rb') as f:
-                    modelo_data = pickle.load(f)
-                # Verificar que el hash almacenado coincide
-                if modelo_data.get("file_hash") == file_hash:
-                    # Se ha precargado el modelo: no es necesario reentrenar
-                    return modelo_data["df_clustered"], file_hash
-            except Exception as e:
-                # Si falla la carga, se procede a reentrenar
-                print("Error al cargar el modelo persistente:", e)
-        
-        # Si se llega aquí es porque no existe modelo o se detectaron cambios: se entrena de nuevo
-        sentence_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-        
-        # Generar embeddings para la columna limpia de preguntas y respuestas
-        question_embeddings = sentence_model.encode(df['Pregunta_clean'].tolist())
-        answer_embeddings = sentence_model.encode(df['Respuesta_clean'].tolist())
-        
-        # Clustering para preguntas
-        clustering_questions = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=0.7,
-            metric='cosine',
-            linkage='average'
-        )
-        df['Pregunta_Group_ID'] = clustering_questions.fit_predict(question_embeddings)
-        
-        # Clustering para respuestas
-        clustering_answers = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=0.7,
-            metric='cosine',
-            linkage='average'
-        )
-        df['Respuesta_Group_ID'] = clustering_answers.fit_predict(answer_embeddings)
-        
-        # Se pueden incluir aquí pasos adicionales (p.ej., cálculo de frecuencias)
-        
-        # Guardar el resultado junto con el hash de datos en un diccionario
-        modelo_data = {"file_hash": file_hash, "df_clustered": df}
-        try:
-            with open(MODEL_PATH, 'wb') as f:
-                pickle.dump(modelo_data, f)
-        except Exception as e:
-            print("Error al guardar el modelo persistente:", e)
-        
-        return df, file_hash
-
-    # Función que genera embeddings y realiza clustering solo cuando hay nuevos datos
-    @st.cache_data(show_spinner="Entrenando modelo...", persist=True)
-    def compute_embeddings_and_clustering(df, file_hash):
-        model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-        # Generar embeddings para las columnas limpias
-        question_embeddings = model.encode(df['Pregunta_clean'].tolist())
-        answer_embeddings = model.encode(df['Respuesta_clean'].tolist())
-        # Clustering para preguntas
-        clustering_questions = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=0.7,
-            metric='cosine',
-            linkage='average'
-        )
-        df['Pregunta_Group_ID'] = clustering_questions.fit_predict(question_embeddings)
-        # Clustering para respuestas
-        clustering_answers = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=0.7,
-            metric='cosine',
-            linkage='average'
-        )
-        df['Respuesta_Group_ID'] = clustering_answers.fit_predict(answer_embeddings)
-        return df
-
-    # Función para calcular la frecuencia de cada grupo y fusionarla al DataFrame
-    def calculo_frecuencia_grupo(df):
-        group_preg_freq = df.groupby('Pregunta_Group_ID')['Pregunta'].count().rename('Pregunta_Frequency')
-        group_resp_freq = df.groupby('Respuesta_Group_ID')['Respuesta'].count().rename('Respuesta_Frequency')
-        df = df.merge(group_preg_freq, on='Pregunta_Group_ID', how='left')
-        df = df.merge(group_resp_freq, on='Respuesta_Group_ID', how='left')
-        return df
-
-    # Función para reestructurar el DataFrame final con las columnas requeridas
-    def reestructurar_dataframe(df):
-        final_df = df[['Registro', 'Pregunta', 'Pregunta_Group_ID', 
-                       'Respuesta', 'Respuesta_Group_ID', 'Pregunta_Frequency', 'Respuesta_Frequency']]
-        return final_df
-
-    # Función para convertir el DataFrame a Excel en memoria
-    def convertir_a_excel(df):
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Datos')
-            writer.close()
-        processed_data = output.getvalue()
-        return processed_data
-        
-    """
 
     try:
         st.markdown("<h3 style='text-align: left;'>Análisis de la Data</h3>", unsafe_allow_html=True)
@@ -709,7 +536,7 @@ def createPage():
         # Top 5 Palabras más utilizadas en las preguntas por cada Área (Formato)
         #######################################################################
         
-        st.title("Top 5 Tokens por Formato")
+        st.header("Top 5 Tokens por Formato")
     
         # Asume que 'data' ya está cargado, por ejemplo:
         # data = pd.read_excel("Data RFI.xlsx")
@@ -724,14 +551,14 @@ def createPage():
         # StopWords
         ###################
        
-        st.title("Top 10 palabras por Formato (Sin Stopwords)")
+        st.header("Top 10 palabras por Formato (Sin Stopwords)")
         render_top10_words_by_format(data)
 
         ####################################
         # Correlación entre Formatos (Áreas)
         ####################################
         
-        st.title("Gráfico de Correlación entre Formatos (Áreas)")
+        st.header("Gráfico de Correlación Interactiva entre Formatos (Áreas)")
         plot_correlacion(data)
 
     except Exception as e:
