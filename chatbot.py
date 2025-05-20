@@ -106,12 +106,12 @@ def createPage():
     #st.set_page_config(page_title="ChatBot DIPRO", layout="wide")
 
     # Logo
-    img = Image.open(LOGO_PATH).convert("RGBA")
+    """img = Image.open(LOGO_PATH).convert("RGBA")
     col1, col2, col3 = st.columns([1.5,1,1])
     with col2:
-        st.image(img, width=150)
+        st.image(img, width=150)"""
 
-    st.title("🤖 ChatBot DIPRO (sin uploader)")
+    st.header("🤖 ChatBot DIPRO")
     st.write("Escribe tu pregunta y recibirás la respuesta histórica más relevante.")
 
     # Carga datos + modelo + embeddings + índice
