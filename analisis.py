@@ -430,7 +430,7 @@ def createPage():
         st.write(f"**Coeficiente de correlación (coseno):** {coef:.3f}")
 
         # Gráfico
-        fig, ax = plt.subplots(figsize=(12, 10))
+        fig, ax = plt.subplots(figsize=(10, 8))
         # Log-transform +1 para evitar log(0)
         x_vals = np.log(temp[eje_x] + 1)
         y_vals = np.log(temp[eje_y] + 1)
@@ -448,8 +448,8 @@ def createPage():
                 fontsize=8
             )
 
-        ax.set_xlabel(f"Log({eje_x} + 1)")
-        ax.set_ylabel(f"Log({eje_y} + 1)")
+        ax.set_xlabel({eje_x})
+        ax.set_ylabel({eje_y})
         ax.set_title(f"Correlación entre «{eje_x}» y «{eje_y}»")
         ax.grid(False)  # Quitar rejillas
 
