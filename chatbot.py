@@ -1,148 +1,147 @@
 import os
-import string
-import hashlib
-import pickle
-
-import streamlit as st
+import json
+import time
 import pandas as pd
-import numpy as np
-from PIL import Image
-import nltk
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
-from sentence_transformers import SentenceTransformer, util
-import faiss
+import streamlit as st
+from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments, DataCollatorForLanguageModeling, pipeline
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from datasets import Dataset
 
-# ─── Configuración de rutas ──────────────────────────────────────────────────
-BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH   = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
-LOGO_PATH   = os.path.join(BASE_DIR, "Imagenes", "Dipro_Logo1.png")
-CACHE_DIR   = os.path.join(BASE_DIR, "cache")
-EMB_CACHE   = os.path.join(CACHE_DIR, "embeddings_cache.pkl")
-IDX_CACHE   = os.path.join(CACHE_DIR, "faiss.index")
-DF_CACHE    = os.path.join(CACHE_DIR, "data_rfi.pkl")
 
-# ─── Asegurar carpeta de cache ────────────────────────────────────────────────
-def ensure_cache_dir():
-    os.makedirs(CACHE_DIR, exist_ok=True)
+############################################
+# Función Principal de la Página
+############################################
 
-# ─── NLP Preprocesado ─────────────────────────────────────────────────────────
-nltk.download('punkt', quiet=True)
-nltk.download('stopwords', quiet=True)
-_spanish_stop = set(stopwords.words("spanish"))
-
-def preprocess_text(text: str) -> str:
-    text = text.lower()
-    tokens = word_tokenize(text, language='spanish')
-    tokens = [t for t in tokens if t not in _spanish_stop and t not in string.punctuation]
-    return " ".join(tokens)
-
-# ─── Hash del archivo para invalidar cache ────────────────────────────────────
-def file_md5(path: str) -> str:
-    with open(path, 'rb') as f:
-        return hashlib.md5(f.read()).hexdigest()
-
-# ─── Carga / cache del DataFrame ─────────────────────────────────────────────
-def load_or_cache_df() -> pd.DataFrame:
-    ensure_cache_dir()
-    if os.path.exists(DF_CACHE):
-        df = pd.read_pickle(DF_CACHE)
-    else:
-        df = pd.read_excel(DATA_PATH).dropna(subset=['Pregunta','Respuesta'])
-        df['Pregunta_proc'] = df['Pregunta'].map(preprocess_text)
-        df.to_pickle(DF_CACHE)
-    return df
-
-# ─── Modelo de embeddings ────────────────────────────────────────────────────
-@st.cache_resource(show_spinner=False)
-def get_embedding_model() -> SentenceTransformer:
-    return SentenceTransformer("all-mpnet-base-v2")
-
-# ─── Carga / cálculo de embeddings con cache MD5 ─────────────────────────────
-def load_or_compute_embeddings(df: pd.DataFrame, model: SentenceTransformer) -> np.ndarray:
-    ensure_cache_dir()
-    current_hash = file_md5(DATA_PATH)
-    if os.path.exists(EMB_CACHE):
-        cache = pickle.load(open(EMB_CACHE, 'rb'))
-        if cache.get('hash') == current_hash:
-            st.info("🔄 Cargando embeddings desde cache")
-            return cache['embeddings']
-    # si no hay cache o cambió el archivo:
-    st.info("⚙️ Generando nuevos embeddings por cambio en Data RFI")
-    # Para evitar issues de hash con listas, pasamos siempre una tupla:
-    preguntas = tuple(df['Pregunta_proc'].tolist())
-    embeddings = model.encode(preguntas, convert_to_numpy=True, normalize_embeddings=True).astype('float32')
-    pickle.dump({'hash': current_hash, 'embeddings': embeddings}, open(EMB_CACHE, 'wb'))
-    return embeddings
-
-# ─── Carga / construcción de índice FAISS ─────────────────────────────────────
-def load_or_build_index(embeddings: np.ndarray) -> faiss.IndexFlatL2:
-    ensure_cache_dir()
-    if os.path.exists(IDX_CACHE):
-        index = faiss.read_index(IDX_CACHE)
-    else:
-        dim = embeddings.shape[1]
-        index = faiss.IndexFlatL2(dim)
-        index.add(embeddings)
-        faiss.write_index(index, IDX_CACHE)
-    return index
-
-# ─── Recuperación de respuesta más similar ───────────────────────────────────
-def retrieve_answer(query: str,
-                    df: pd.DataFrame,
-                    model: SentenceTransformer,
-                    index: faiss.IndexFlatL2) -> str:
-    q_proc = preprocess_text(query)
-    q_emb  = model.encode([q_proc], convert_to_numpy=True, normalize_embeddings=True).astype('float32')
-    D, I   = index.search(q_emb, 1)
-    idx    = int(I[0][0])
-    score  = 1 - D[0][0]
-    if score < 0.5:
-        return "Lo siento, no tengo una respuesta precisa para esa pregunta."
-    return df.iloc[idx]['Respuesta']
-
-# ─── Página principal ────────────────────────────────────────────────────────
 def createPage():
-    #st.set_page_config(page_title="ChatBot DIPRO", layout="wide")
 
-    # Logo
-    """img = Image.open(LOGO_PATH).convert("RGBA")
-    col1, col2, col3 = st.columns([1.5,1,1])
-    with col2:
-        st.image(img, width=150)"""
+    # ─── Configuración de rutas ──────────────────────────────────────────────────
+    BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+    DATA_PATH   = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
+    HASH_FILE = os.path.join(BASE_DIR, "Models", "data_hash.txt")
+    TIMESTAMP_FILE = os.path.join(BASE_DIR, ".data_timestamp.json")
+    MODEL_DIR = os.path.join(BASE_DIR, "Models", "mistral_rfi_lora")
+    BASE_MODEL = os.path.join(BASE_DIR, "Models", "mistral-7b-instruct-v0.1")
 
-    st.header("🤖 ChatBot DIPRO")
-    st.write("Escribe tu pregunta y recibirás la respuesta histórica más relevante.")
+    @st.cache_resource
+    def load_dataset(path):
+        df = pd.read_excel(path)
+        # Expect columns 'Pregunta' and 'Respuesta'
+        df = df.dropna(subset=["Pregunta", "Respuesta"]).reset_index(drop=True)
+        # Combine input and output as instruction format
+        df["text"] = df.apply(lambda x: f"<|prompt|>{x['Pregunta']}<|response|>{x['Respuesta']}", axis=1)
+        return Dataset.from_pandas(df[["text"]])
 
-    # Carga datos + modelo + embeddings + índice
-    df         = load_or_cache_df()
-    model      = get_embedding_model()
-    embeddings = load_or_compute_embeddings(df, model)
-    index      = load_or_build_index(embeddings)
-    st.success(f"✅ Modelo listo con {len(df)} pares Pregunta/Respuesta")
+    @st.cache_resource
+    def get_model_and_tokenizer():
+        tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, use_fast=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            BASE_MODEL,
+            load_in_8bit=False,
+            torch_dtype="auto",
+            device_map="cpu"
+        )
+        # Prepare for LoRA on CPU
+        model = prepare_model_for_kbit_training(model)
+        peft_config = LoraConfig(
+            r=8,
+            lora_alpha=32,
+            target_modules=["q_proj", "v_proj"],
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM"
+        )
+        model = get_peft_model(model, peft_config)
+        return model, tokenizer
 
-    # Chat UI
-    if 'history' not in st.session_state:
-        st.session_state.history = []
+    # Tracking data updates
+    def data_changed(path, ts_file):
+        mtime = os.path.getmtime(path)
+        if os.path.exists(ts_file):
+            with open(ts_file, 'r') as f:
+                info = json.load(f)
+            if info.get('mtime') == mtime:
+                return False
+        # save new timestamp
+        with open(ts_file, 'w') as f:
+            json.dump({'mtime': mtime}, f)
+        return True
 
-    pregunta = st.text_input("Tu pregunta:")
-    if st.button("Enviar"):
-        if pregunta.strip():
-            respuesta = retrieve_answer(pregunta, df, model, index)
-            st.session_state.history.append((pregunta, respuesta))
+    # Fine-tune function
+    def fine_tune(model, tokenizer, dataset):
+        data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
+        training_args = TrainingArguments(
+            output_dir=MODEL_DIR,
+            num_train_epochs=5,                 # 5 pasadas, más ajuste fino
+            per_device_train_batch_size=1,      # 1 muestra por paso
+            gradient_accumulation_steps=16,     # batch efectivo = 16
+            learning_rate=2e-4,                 # ligeramente más alto para converger rápido
+            save_total_limit=1,
+            logging_steps=50,
+            fp16=False,
+            push_to_hub=False,
+        )
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=dataset,
+            data_collator=data_collator,
+            tokenizer=tokenizer,
+        )
+        trainer.train()
+        model.save_pretrained(MODEL_DIR)
+        tokenizer.save_pretrained(MODEL_DIR)
+
+    try:
+
+        # Main
+        st.title("Asistente Virtual DIPRO")
+        # Check for updates
+        if data_changed(DATA_PATH, TIMESTAMP_FILE) or not os.path.isdir(MODEL_DIR):
+            st.info("Detectando cambios en Data RFI, entrenando modelo...")
+            dataset = load_dataset(DATA_PATH)
+            model, tokenizer = get_model_and_tokenizer()
+            fine_tune(model, tokenizer, dataset)
+            st.success("Entrenamiento completado y modelo guardado.")
         else:
-            st.warning("Escribe algo primero…")
+            st.success("Modelo entrenado y actualizado.")
+            model = AutoModelForCausalLM.from_pretrained(MODEL_DIR, device_map="cpu")
+            tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, use_fast=True)
 
-    for q, a in st.session_state.history:
-        st.markdown(f"**Tú:** {q}")
-        st.markdown(f"**Bot:** {a}")
-        st.markdown("---")
+        # Chat interface
+        generator = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            device="cpu",
+            max_new_tokens=128,
+            do_sample=True,
+            temperature=0.7
+        )
 
-    # Ocultar menú de Streamlit
-    hide = """<style>
-              #MainMenu, footer, header {visibility: hidden;}
-              </style>"""
-    st.markdown(hide, unsafe_allow_html=True)
+        st.subheader("Chatea con tu Asistente:")
+        user_input = st.text_input("Pregunta:")
+        if st.button("Enviar") and user_input:
+            prompt = f"<|prompt|>{user_input}<|response|>"
+            with st.spinner("Generando respuesta..."):
+                out = generator(prompt)
+            response = out[0]['generated_text'].split('<|response|>')[-1]
+            st.write(response)
 
-if __name__ == "__main__":
-    createPage()
+        # Show metadata
+        st.write(f"Última actualización de datos: {time.ctime(os.path.getmtime(DATA_PATH))}")
+    
+    except Exception as e:
+        st.error("Error al procesar el archivo 'Data RFI.xlsx'.")
+        st.error(str(e))
+        return
+
+    # Ocultar elementos de Streamlit
+    hide_st_style = """
+                <style>
+                #MainMenu {visibility: hidden;}
+                footer {visibility: hidden;}
+                header {visibility: hidden;}
+                </style>
+                """
+    st.markdown(hide_st_style, unsafe_allow_html=True)
+    return True

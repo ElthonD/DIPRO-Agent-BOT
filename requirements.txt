@@ -21,3 +21,4 @@ XlsxWriter==3.2.2
 huggingface_hub
 hf_xet
 faiss-cpu
+datasets
