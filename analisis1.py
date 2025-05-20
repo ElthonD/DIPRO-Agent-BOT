@@ -15,6 +15,7 @@ from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 import re
 import plotly.express as px
+from scipy.spatial.distance import cosine
 
 # Para Clustering
 # ==============================================================================
@@ -367,24 +368,100 @@ def createPage():
         fig.tight_layout()
         st.pyplot(fig)  
 
+    ############################
+    #Función de similitud coseno
+    ############################
+
+    def similitud_coseno(a, b):
+        return 1 - cosine(a, b) 
+
+    ##################
+    #Pivotado cacheado
+    ##################
+
+    @st.cache_data(show_spinner=False)
+    def pivot_tokens(df: pd.DataFrame) -> pd.DataFrame:
+        # Aplica limpieza/tokenización (asume que limpiar_tokenizar ya está definida)
+        df = df.copy()
+        df['tokens'] = df['Pregunta'].apply(limpiar_tokenizar)
+        tidy = (
+            df
+            .explode('tokens')
+            .drop(columns='Pregunta')
+            .rename(columns={'tokens': 'token'})
+        )
+        pivot = (
+            tidy
+            .groupby(['Formato', 'token'])['token']
+            .count()
+            .reset_index(name='count')
+            .pivot(index='token', columns='Formato', values='count')
+        )
+        pivot.columns.name = None
+        return pivot
+
+    #######################
+    #Gráfico de correlación
+    #######################
+
+    def plot_correlacion(df: pd.DataFrame):
+        st.header("Gráfico de Correlación Interactiva")
+        pivot = pivot_tokens(df)
+        formatos = list(pivot.columns)
+
+        if len(formatos) < 2:
+            st.warning("Se requieren al menos 2 formatos distintos para graficar.")
+            return
+
+        # Selectboxes para elegir ejes
+        col1, col2 = st.columns(2)
+        with col1:
+            eje_x = st.selectbox("Eje X (Formato)", formatos, index=0)
+        with col2:
+            eje_y = st.selectbox("Eje Y (Formato)", formatos, index=1)
+
+        # Filtrar y limpiar NA
+        temp = pivot[[eje_x, eje_y]].dropna()
+        if temp.empty:
+            st.warning("No hay datos comunes entre los dos formatos seleccionados.")
+            return
+
+        # Calcular coeficiente de correlación por coseno
+        coef = similitud_coseno(temp[eje_x].values, temp[eje_y].values)
+        st.write(f"**Coeficiente de correlación (coseno):** {coef:.3f}")
+
+        # Gráfico
+        fig, ax = plt.subplots(figsize=(12, 10))
+        # Log-transform +1 para evitar log(0)
+        x_vals = np.log(temp[eje_x] + 1)
+        y_vals = np.log(temp[eje_y] + 1)
+        sns.regplot(x=x_vals, y=y_vals, scatter_kws={'alpha': 0.05}, ax=ax)
+
+        # Anotaciones en muestra aleatoria de hasta 100 puntos
+        n_pts = min(100, len(temp))
+        indices = np.random.choice(len(temp), n_pts, replace=False)
+        for idx in indices:
+            palabra = temp.index[idx]
+            ax.annotate(
+                palabra,
+                xy=(x_vals.iloc[idx], y_vals.iloc[idx]),
+                alpha=0.7,
+                fontsize=8
+            )
+
+        ax.set_xlabel(f"Log({eje_x} + 1)")
+        ax.set_ylabel(f"Log({eje_y} + 1)")
+        ax.set_title(f"Correlación entre «{eje_x}» y «{eje_y}»")
+        ax.grid(False)  # Quitar rejillas
+
+        st.pyplot(fig)
+
+
+
+    
 
     """
-    def top_palabras_formato(df):
-
-        # Top 10 palabras por autor (sin stopwords)
-        # ==============================================================================
-        fig, axs = plt.subplots(nrows=10, ncols=1,figsize=(12, 20))
-        for i, formato in enumerate(df.Formato.unique()):
-            df_temp = df[df.Formato == formato]
-            counts  = df_temp['token'].value_counts(ascending=False).head(10)
-            counts.plot(kind='barh', color='blue', ax=axs[i])
-            axs[i].invert_yaxis()
-            axs[i].set_title(formato)
-
-        #font = {'size'   : 10}
-
-        #plt.rc('font', **font)
-        fig.tight_layout()
+    
 
 
     ############################################
@@ -714,43 +791,52 @@ def createPage():
         st.title("Top 10 palabras por Formato (Sin Stopwords)")
         render_top10_words_by_format(data)
 
+        ####################################
+        # Correlación entre Formatos (Áreas)
+        ####################################
+        
+        st.title("Gráfico de Correlación entre Formatos (Áreas)")
+        plot_correlacion(data)
+        
         """
-        # Se aplica la función de limpieza y tokenización a cada pregunta
-        # ==============================================================================
-        data['preguntaRFI_tokenizado'] = data['Pregunta'].apply(lambda x: limpiar_tokenizar(x))
 
-        # Unnest de la columna texto_tokenizado
+        # Pivotado de datos
         # ==============================================================================
-        preguntaRFI_tokenizado_tidy = data.explode(column='preguntaRFI_tokenizado')
-        preguntaRFI_tokenizado_tidy = preguntaRFI_tokenizado_tidy.drop(columns='Pregunta')
-        preguntaRFI_tokenizado_tidy = preguntaRFI_tokenizado_tidy.rename(columns={'preguntaRFI_tokenizado':'token'})
+        preguntaRFI_pivot = preguntaRFI_tokenizado_tidy.groupby(["Formato","token"])["token"] \
+                        .agg(["count"]).reset_index() \
+                        .pivot(index = "token" , columns="Formato", values= "count")
+        preguntaRFI_pivot.columns.name = None
+
+        # Test de correlación (coseno) por el uso y frecuencia de palabras
+        # ==============================================================================
+        from scipy.spatial.distance import cosine
+
+        def similitud_coseno(a,b):
+            distancia = cosine(a,b)
+            return 1-distancia
+
+        preguntaRFI_pivot.corr(method=similitud_coseno)
+
+
+        # Gráfico de correlación Bodega Aurrera vs Bodega Aurrera Express
+        # ==============================================================================
+        f, ax = plt.subplots(figsize=(12, 10))
+        temp = preguntaRFI_pivot.dropna()
+        sns.regplot(
+            x  = np.log(temp['Bodega Aurrera']),
+            y  = np.log(temp['Bodega Aurrera Express']),
+            scatter_kws =  {'alpha': 0.05},
+            ax = ax
+        );
+        for i in np.random.choice(range(temp.shape[0]), 100):
+            ax.annotate(
+                text  = temp.index[i],
+                xy    = (np.log(temp['Bodega Aurrera'][i]), np.log(temp['Bodega Aurrera Express'][i])),
+                alpha = 0.7
+            )   
+        
 
         
-        # Obtención de listado de stopwords del español
-        # ==============================================================================
-        stop_words = list(stopwords.words('spanish'))
-        # Se añade la stoprword: amp, ax, ex
-        stop_words.extend(("amp", "xa", "xe", "plano", "indica", "proyecto", "si", "apoyo", "área", "favor", "acuerdo", "detalle", "solicita", "rfi", "area", "si", "existente", "buena", "oc", "cm", "aunado", "indicar", "referente", "trabajos", "tarde", "solicito", "cambio", "hallazgo", "adjunta", "producto", "nuevo", "solicitamos", "indiquen", "ser", "confirmar", "embargo", "procede", "ie", "indicarnos", "realizar", "confirmar", "procede", "de", "la", "se", "en", "el", "cual", "debe", "quedo","parte"))
-    
-        # Filtrado para excluir stopwords
-        # ==============================================================================
-        preguntaRFI_tokenizado_tidy = preguntaRFI_tokenizado_tidy[~(preguntaRFI_tokenizado_tidy["token"].isin(stop_words))]
-
-        # Top 10 palabras por autor (sin stopwords)
-        # ==============================================================================
-        fig, axs = plt.subplots(nrows=10, ncols=1,figsize=(12, 20))
-        for i, formato in enumerate(preguntaRFI_tokenizado_tidy.Formato.unique()):
-            df_temp = preguntaRFI_tokenizado_tidy[preguntaRFI_tokenizado_tidy.Formato == formato]
-            counts  = df_temp['token'].value_counts(ascending=False).head(10)
-            counts.plot(kind='barh', color='blue', ax=axs[i])
-            axs[i].invert_yaxis()
-            axs[i].set_title(formato)
-
-        #font = {'size'   : 10}
-
-        #plt.rc('font', **font)
-        fig.tight_layout()
-
         # Aplicar limpieza a las columnas importantes
         data_limpia = limpieza_columnas_importantes(data)
 
