@@ -4,7 +4,11 @@ import json
 import time
 import pandas as pd
 import streamlit as st
-from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments, DataCollatorForLanguageModeling, pipeline
+from transformers import (
+    AutoTokenizer, AutoModelForCausalLM,
+    Trainer, TrainingArguments,
+    DataCollatorForLanguageModeling, pipeline
+)
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from datasets import Dataset
 
@@ -19,23 +23,25 @@ def createPage():
     DATA_PATH      = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
     TIMESTAMP_FILE = os.path.join(BASE_DIR, ".data_timestamp.json")
     MODEL_DIR      = os.path.join(BASE_DIR, "Models", "mistral_rfi_lora")
-    # Identificador de modelo base en Hugging Face (requiere login HF CLI)
-    BASE_MODEL     = "mistralai/Mistral-7B-Instruct-v0.2"
+    # Usamos la versión pública v0.1, que no está gated
+    BASE_MODEL     = "mistralai/Mistral-7B-Instruct-v0.1"
 
     @st.cache_resource
     def load_dataset(path):
         df = pd.read_excel(path)
         df = df.dropna(subset=["Pregunta", "Respuesta"]).reset_index(drop=True)
-        df["text"] = df.apply(lambda x: f"<|prompt|>{x['Pregunta']}<|response|>{x['Respuesta']}", axis=1)
+        df["text"] = df.apply(
+            lambda x: f"<|prompt|>{x['Pregunta']}<|response|>{x['Respuesta']}",
+            axis=1
+        )
         return Dataset.from_pandas(df[["text"]])
 
     @st.cache_resource
     def get_model_and_tokenizer():
-        # Asegúrate de haber hecho 'huggingface-cli login' con tu token de acceso
+        # Cargamos el tokenizer y el modelo sin gating ni token
         tokenizer = AutoTokenizer.from_pretrained(
             BASE_MODEL,
             use_fast=True,
-            use_auth_token=True,
             trust_remote_code=True
         )
         model = AutoModelForCausalLM.from_pretrained(
@@ -43,7 +49,6 @@ def createPage():
             load_in_8bit=False,
             torch_dtype="auto",
             device_map="cpu",
-            use_auth_token=True,
             trust_remote_code=True
         )
         # Preparar LoRA en CPU
@@ -98,6 +103,7 @@ def createPage():
 
     try:
         st.title("Asistente Virtual DIPRO")
+
         if data_changed(DATA_PATH, TIMESTAMP_FILE) or not os.path.isdir(MODEL_DIR):
             st.info("Detectando cambios en Data RFI, entrenando modelo...")
             dataset = load_dataset(DATA_PATH)
@@ -137,17 +143,18 @@ def createPage():
             st.write(response)
 
         st.write(f"Última actualización de datos: {time.ctime(os.path.getmtime(DATA_PATH))}")
+
     except Exception as e:
         st.error("Error al procesar el archivo 'Data RFI.xlsx'.")
         st.error(str(e))
         return
 
     hide_st_style = """
-                <style>
-                #MainMenu {visibility: hidden;}
-                footer {visibility: hidden;}
-                header {visibility: hidden;}
-                </style>
-                """
+    <style>
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+    </style>
+    """
     st.markdown(hide_st_style, unsafe_allow_html=True)
     return True
