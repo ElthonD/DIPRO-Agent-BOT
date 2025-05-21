@@ -1,59 +1,59 @@
-# Requisitos: pip install streamlit transformers peft datasets pandas huggingface_hub
+# Requisitos: pip install streamlit transformers peft datasets pandas python-dotenv huggingface_hub
+
 import os
 import json
 import time
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
-from huggingface_hub import login
 
 from transformers import (
-    AutoTokenizer, AutoModelForCausalLM,
-    Trainer, TrainingArguments,
-    DataCollatorForLanguageModeling, pipeline
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    Trainer,
+    TrainingArguments,
+    DataCollatorForLanguageModeling,
+    pipeline
 )
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
-# Para el download programático
-from huggingface_hub import snapshot_download, login
+from huggingface_hub import login, snapshot_download
 
 ############################################
 # Función Principal de la Página
 ############################################
 
 def createPage():
+    # ─── Carga el .env y haz login ───────────────────────────────────────────────
+    load_dotenv()  
+    hf_token = os.getenv("HF_TOKEN")
+    if not hf_token:
+        st.error("No se encontró HF_TOKEN en el .env. Crea un archivo `.env` con HF_TOKEN=tu_token_aquí")
+        return
+    # login guardará el token en cache local de HF Hub
+    login(hf_token)
 
     # ─── Configuración de rutas ──────────────────────────────────────────────────
     BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
     DATA_PATH      = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
     TIMESTAMP_FILE = os.path.join(BASE_DIR, ".data_timestamp.json")
     MODEL_DIR      = os.path.join(BASE_DIR, "Models", "mistral_rfi_lora")
-    # carpeta caché donde guardaremos todo el repo descargado
     MODEL_CACHE    = os.path.join(BASE_DIR, "Models", "mistral_cache")
-    # Identificador del repo gated
     BASE_MODEL     = "mistralai/Mistral-7B-Instruct-v0.2"
-
-    # lee .env y vuelca a os.environ
-    load_dotenv()
-
-    # recupera tu token
-    hf_token = os.getenv("HF_TOKEN")
-    if hf_token is None:
-        raise ValueError("No se encontró HF_TOKEN en el .env")
-
-    # haz login con él
-    login(hf_token)
 
     @st.cache_resource
     def download_and_cache():
-        # Descarga todo el repo (con tu token) a MODEL_CACHE
-        return snapshot_download(
-            repo_id=BASE_MODEL,
-            local_dir=MODEL_CACHE,
-            use_auth_token=True,
-            resume_download=True
-        )
+        try:
+            return snapshot_download(
+                repo_id    = BASE_MODEL,
+                local_dir  = MODEL_CACHE,
+                token      = hf_token,
+                resume_download = True
+            )
+        except Exception as e:
+            st.error(f"Error descargando el modelo de HF Hub: {e}")
+            raise
 
     @st.cache_resource
     def load_dataset(path):
@@ -67,9 +67,10 @@ def createPage():
 
     @st.cache_resource
     def get_model_and_tokenizer():
-        # Asegúrate de haber ejecutado download_and_cache() antes
+        # 1) Asegúrate de que la descarga ya se haya hecho
         local_dir = download_and_cache()
 
+        # 2) Carga en modo offline desde local_dir
         tokenizer = AutoTokenizer.from_pretrained(
             local_dir,
             use_fast=True,
@@ -84,15 +85,15 @@ def createPage():
             local_files_only=True
         )
 
-        # Preparar LoRA en CPU
+        # 3) Aplica LoRA
         model = prepare_model_for_kbit_training(model)
         peft_config = LoraConfig(
-            r=8,
-            lora_alpha=32,
-            target_modules=["q_proj", "v_proj"],
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM"
+            r               = 8,
+            lora_alpha      = 32,
+            target_modules  = ["q_proj", "v_proj"],
+            lora_dropout    = 0.05,
+            bias            = "none",
+            task_type       = "CAUSAL_LM"
         )
         model = get_peft_model(model, peft_config)
         return model, tokenizer
@@ -111,24 +112,24 @@ def createPage():
     def fine_tune(model, tokenizer, dataset):
         data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
         training_args = TrainingArguments(
-            output_dir=MODEL_DIR,
-            num_train_epochs=5,
-            per_device_train_batch_size=1,
-            gradient_accumulation_steps=16,
-            learning_rate=2e-4,
-            save_total_limit=1,
-            logging_steps=50,
-            fp16=False,
-            push_to_hub=False,
-            hub_strategy="never",
-            hub_model_id=None
+            output_dir              = MODEL_DIR,
+            num_train_epochs        = 5,
+            per_device_train_batch_size = 1,
+            gradient_accumulation_steps  = 16,
+            learning_rate           = 2e-4,
+            save_total_limit        = 1,
+            logging_steps           = 50,
+            fp16                    = False,
+            push_to_hub             = False,
+            hub_strategy            = "never",
+            hub_model_id            = None
         )
         trainer = Trainer(
-            model=model,
-            args=training_args,
-            train_dataset=dataset,
-            data_collator=data_collator,
-            tokenizer=tokenizer,
+            model           = model,
+            args            = training_args,
+            train_dataset   = dataset,
+            data_collator  = data_collator,
+            tokenizer       = tokenizer,
         )
         trainer.train()
         model.save_pretrained(MODEL_DIR)
@@ -138,7 +139,7 @@ def createPage():
         st.title("Asistente Virtual DIPRO")
 
         if data_changed(DATA_PATH, TIMESTAMP_FILE) or not os.path.isdir(MODEL_DIR):
-            st.info("Detectando cambios en Data RFI, entrenando modelo...")
+            st.info("Detectando cambios en Data RFI, entrenando modelo…")
             dataset = load_dataset(DATA_PATH)
             model, tokenizer = get_model_and_tokenizer()
             fine_tune(model, tokenizer, dataset)
@@ -158,19 +159,19 @@ def createPage():
 
         generator = pipeline(
             "text-generation",
-            model=model,
-            tokenizer=tokenizer,
-            device="cpu",
-            max_new_tokens=128,
-            do_sample=True,
-            temperature=0.7
+            model       = model,
+            tokenizer   = tokenizer,
+            device      = "cpu",
+            max_new_tokens = 128,
+            do_sample   = True,
+            temperature = 0.7
         )
 
         st.subheader("Chatea con tu Asistente:")
         user_input = st.text_input("Pregunta:")
         if st.button("Enviar") and user_input:
             prompt = f"<|prompt|>{user_input}<|response|>"
-            with st.spinner("Generando respuesta..."):
+            with st.spinner("Generando respuesta…"):
                 out = generator(prompt)
             response = out[0]['generated_text'].split('<|response|>')[-1]
             st.write(response)
@@ -178,16 +179,19 @@ def createPage():
         st.write(f"Última actualización de datos: {time.ctime(os.path.getmtime(DATA_PATH))}")
 
     except Exception as e:
-        st.error("Error al procesar el archivo 'Data RFI.xlsx'.")
+        st.error("Error al procesar el archivo 'Data RFI.xlsx' o al cargar el modelo.")
         st.error(str(e))
         return
 
-    hide_st_style = """
-    <style>
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        header {visibility: hidden;}
-    </style>
-    """
-    st.markdown(hide_st_style, unsafe_allow_html=True)
+    # Oculta menús de Streamlit
+    st.markdown(
+        """
+        <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
     return True
