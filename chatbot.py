@@ -1,16 +1,22 @@
-# Requisitos: pip install streamlit transformers peft datasets pandas
+# Requisitos: pip install streamlit transformers peft datasets pandas huggingface_hub
 import os
 import json
 import time
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
+from huggingface_hub import login
+
 from transformers import (
     AutoTokenizer, AutoModelForCausalLM,
     Trainer, TrainingArguments,
     DataCollatorForLanguageModeling, pipeline
 )
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from datasets import Dataset
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+
+# Para el download programático
+from huggingface_hub import snapshot_download, login
 
 ############################################
 # Función Principal de la Página
@@ -23,8 +29,32 @@ def createPage():
     DATA_PATH      = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
     TIMESTAMP_FILE = os.path.join(BASE_DIR, ".data_timestamp.json")
     MODEL_DIR      = os.path.join(BASE_DIR, "Models", "mistral_rfi_lora")
-    # Usamos la versión pública v0.1, que no está gated
-    BASE_MODEL     = "mistralai/Mistral-7B-Instruct-v0.1"
+    # carpeta caché donde guardaremos todo el repo descargado
+    MODEL_CACHE    = os.path.join(BASE_DIR, "Models", "mistral_cache")
+    # Identificador del repo gated
+    BASE_MODEL     = "mistralai/Mistral-7B-Instruct-v0.2"
+
+    # lee .env y vuelca a os.environ
+    load_dotenv()
+
+    # recupera tu token
+    hf_token = os.getenv("HF_TOKEN")
+    if hf_token is None:
+        raise ValueError("No se encontró HF_TOKEN en el .env")
+
+    # haz login con él
+    login(hf_token)
+
+    @st.cache_resource
+    def download_and_cache():
+        # Descarga todo el repo (con tu token) a MODEL_CACHE
+        return snapshot_download(
+            repo_id=BASE_MODEL,
+            local_dir=MODEL_CACHE,
+            use_auth_token=True,
+            trust_remote_code=True,
+            resume_download=True
+        )
 
     @st.cache_resource
     def load_dataset(path):
@@ -38,19 +68,23 @@ def createPage():
 
     @st.cache_resource
     def get_model_and_tokenizer():
-        # Cargamos el tokenizer y el modelo sin gating ni token
+        # Asegúrate de haber ejecutado download_and_cache() antes
+        local_dir = download_and_cache()
+
         tokenizer = AutoTokenizer.from_pretrained(
-            BASE_MODEL,
+            local_dir,
             use_fast=True,
-            trust_remote_code=True
+            trust_remote_code=True,
+            local_files_only=True
         )
         model = AutoModelForCausalLM.from_pretrained(
-            BASE_MODEL,
-            load_in_8bit=False,
-            torch_dtype="auto",
+            local_dir,
             device_map="cpu",
-            trust_remote_code=True
+            torch_dtype="auto",
+            trust_remote_code=True,
+            local_files_only=True
         )
+
         # Preparar LoRA en CPU
         model = prepare_model_for_kbit_training(model)
         peft_config = LoraConfig(
