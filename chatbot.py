@@ -52,7 +52,7 @@ def createPage():
             repo_id=BASE_MODEL,
             local_dir=MODEL_CACHE,
             use_auth_token=True,
-            trust_remote_code=True,
+            #trust_remote_code=True,
             resume_download=True
         )
 
