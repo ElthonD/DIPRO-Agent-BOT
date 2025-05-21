@@ -35,14 +35,16 @@ def createPage():
         tokenizer = AutoTokenizer.from_pretrained(
             BASE_MODEL,
             use_fast=True,
-            use_auth_token=True
+            use_auth_token=True,
+            trust_remote_code=True
         )
         model = AutoModelForCausalLM.from_pretrained(
             BASE_MODEL,
             load_in_8bit=False,
             torch_dtype="auto",
             device_map="cpu",
-            use_auth_token=True
+            use_auth_token=True,
+            trust_remote_code=True
         )
         # Preparar LoRA en CPU
         model = prepare_model_for_kbit_training(model)
@@ -106,11 +108,13 @@ def createPage():
             st.success("Modelo entrenado y actualizado.")
             model = AutoModelForCausalLM.from_pretrained(
                 MODEL_DIR,
-                device_map="cpu"
+                device_map="cpu",
+                trust_remote_code=True
             )
             tokenizer = AutoTokenizer.from_pretrained(
                 MODEL_DIR,
-                use_fast=True
+                use_fast=True,
+                trust_remote_code=True
             )
 
         generator = pipeline(
