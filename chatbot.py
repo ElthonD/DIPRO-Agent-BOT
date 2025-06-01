@@ -8,7 +8,7 @@ import requests
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
 LLM_MODEL_PATH = os.path.join(BASE_DIR, "Models", "llama-2-7b-chat.Q2_K.gguf")
-SEMANTIC_API_URL = "http://localhost:8000/search"  # Cambia el puerto si usas otro
+SEMANTIC_API_URL = "https://semantic-search-service-xxxx.onrender.com/search"  # Cambia el puerto si usas otro
 
 def createPage():
     @st.cache_data
