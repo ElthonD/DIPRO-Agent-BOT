@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 from sklearn.neighbors import NearestNeighbors
@@ -12,7 +12,6 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 app = FastAPI()
 
-# Carga modelos y embeddings al iniciar el servicio
 print("Cargando embeddings y modelo...")
 embeddings = joblib.load(EMBEDDINGS_FILE)
 nn = joblib.load(NN_MODEL_FILE)
