@@ -1,197 +1,77 @@
-# Requisitos: pip install streamlit transformers peft datasets pandas python-dotenv huggingface_hub
-
 import os
-import json
-import time
-import pandas as pd
 import streamlit as st
-from dotenv import load_dotenv
+import pandas as pd
+from llama_cpp import Llama
+import joblib
+import requests
 
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    Trainer,
-    TrainingArguments,
-    DataCollatorForLanguageModeling,
-    pipeline
-)
-from datasets import Dataset
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-
-from huggingface_hub import login, snapshot_download
-
-############################################
-# Función Principal de la Página
-############################################
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
+LLM_MODEL_PATH = os.path.join(BASE_DIR, "Models", "llama-2-7b-chat.Q2_K.gguf")
+SEMANTIC_API_URL = "http://localhost:8000/search"  # Cambia el puerto si usas otro
 
 def createPage():
-    # ─── Carga el .env y haz login ───────────────────────────────────────────────
-    load_dotenv()  
-    hf_token = os.getenv("HF_TOKEN")
-    if not hf_token:
-        st.error("No se encontró HF_TOKEN en el .env. Crea un archivo `.env` con HF_TOKEN=tu_token_aquí")
-        return
-    # login guardará el token en cache local de HF Hub
-    login(hf_token)
-
-    # ─── Configuración de rutas ──────────────────────────────────────────────────
-    BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
-    DATA_PATH      = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
-    TIMESTAMP_FILE = os.path.join(BASE_DIR, ".data_timestamp.json")
-    MODEL_DIR      = os.path.join(BASE_DIR, "Models", "mistral_rfi_lora")
-    MODEL_CACHE    = os.path.join(BASE_DIR, "Models", "mistral_cache")
-    BASE_MODEL     = "mistralai/Mistral-7B-Instruct-v0.2"
+    @st.cache_data
+    def load_data():
+        df = pd.read_excel(DATA_PATH)
+        return df.astype(str)
 
     @st.cache_resource
-    def download_and_cache():
-        try:
-            return snapshot_download(
-                repo_id    = BASE_MODEL,
-                local_dir  = MODEL_CACHE,
-                token      = hf_token,
-                resume_download = True
-            )
-        except Exception as e:
-            st.error(f"Error descargando el modelo de HF Hub: {e}")
-            raise
-
-    @st.cache_resource
-    def load_dataset(path):
-        df = pd.read_excel(path)
-        df = df.dropna(subset=["Pregunta", "Respuesta"]).reset_index(drop=True)
-        df["text"] = df.apply(
-            lambda x: f"<|prompt|>{x['Pregunta']}<|response|>{x['Respuesta']}",
-            axis=1
-        )
-        return Dataset.from_pandas(df[["text"]])
-
-    @st.cache_resource
-    def get_model_and_tokenizer():
-        # 1) Asegúrate de que la descarga ya se haya hecho
-        local_dir = download_and_cache()
-
-        # 2) Carga en modo offline desde local_dir
-        tokenizer = AutoTokenizer.from_pretrained(
-            local_dir,
-            use_fast=True,
-            trust_remote_code=True,
-            local_files_only=True
-        )
-        model = AutoModelForCausalLM.from_pretrained(
-            local_dir,
-            device_map="cpu",
-            torch_dtype="auto",
-            trust_remote_code=True,
-            local_files_only=True
-        )
-
-        # 3) Aplica LoRA
-        model = prepare_model_for_kbit_training(model)
-        peft_config = LoraConfig(
-            r               = 8,
-            lora_alpha      = 32,
-            target_modules  = ["q_proj", "v_proj"],
-            lora_dropout    = 0.05,
-            bias            = "none",
-            task_type       = "CAUSAL_LM"
-        )
-        model = get_peft_model(model, peft_config)
-        return model, tokenizer
-
-    def data_changed(path, ts_file):
-        mtime = os.path.getmtime(path)
-        if os.path.exists(ts_file):
-            with open(ts_file, 'r') as f:
-                info = json.load(f)
-            if info.get('mtime') == mtime:
-                return False
-        with open(ts_file, 'w') as f:
-            json.dump({'mtime': mtime}, f)
-        return True
-
-    def fine_tune(model, tokenizer, dataset):
-        data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
-        training_args = TrainingArguments(
-            output_dir              = MODEL_DIR,
-            num_train_epochs        = 5,
-            per_device_train_batch_size = 1,
-            gradient_accumulation_steps  = 16,
-            learning_rate           = 2e-4,
-            save_total_limit        = 1,
-            logging_steps           = 50,
-            fp16                    = False,
-            push_to_hub             = False,
-            hub_strategy            = "never",
-            hub_model_id            = None
-        )
-        trainer = Trainer(
-            model           = model,
-            args            = training_args,
-            train_dataset   = dataset,
-            data_collator  = data_collator,
-            tokenizer       = tokenizer,
-        )
-        trainer.train()
-        model.save_pretrained(MODEL_DIR)
-        tokenizer.save_pretrained(MODEL_DIR)
+    def get_llm():
+        return Llama(model_path=LLM_MODEL_PATH, n_ctx=128)
 
     try:
-        st.title("Asistente Virtual DIPRO")
-
-        if data_changed(DATA_PATH, TIMESTAMP_FILE) or not os.path.isdir(MODEL_DIR):
-            st.info("Detectando cambios en Data RFI, entrenando modelo…")
-            dataset = load_dataset(DATA_PATH)
-            model, tokenizer = get_model_and_tokenizer()
-            fine_tune(model, tokenizer, dataset)
-            st.success("Entrenamiento completado y modelo guardado.")
+        st.title("🤖 Asistente Virtual DIPRO")
+        df = load_data()
+        if 'Respuesta' in df.columns:
+            texts = df['Respuesta'].tolist()
         else:
-            st.success("Modelo entrenado y actualizado.")
-            model = AutoModelForCausalLM.from_pretrained(
-                MODEL_DIR,
-                device_map="cpu",
-                trust_remote_code=True
+            st.error("No se encontró la columna 'Respuesta' en el archivo Excel.")
+            return
+
+        llm = get_llm()
+        st.subheader("Asistente Virtual")
+        user_query = st.text_input("Haz tu pregunta:")
+
+        if user_query:
+            # Llama al microservicio para obtener los índices relevantes
+            response = requests.post(
+                SEMANTIC_API_URL,
+                json={"question": user_query, "top_k": 5}
             )
-            tokenizer = AutoTokenizer.from_pretrained(
-                MODEL_DIR,
-                use_fast=True,
-                trust_remote_code=True
+            if response.status_code == 200:
+                indices = response.json()["indices"]
+                context_respuestas = "\n".join([texts[i] for i in indices])
+            else:
+                context_respuestas = "No se pudo obtener contexto del microservicio."
+
+            prompt = (
+                "Eres un asistente experto en temas de la empresa DIPRO. "
+                "A continuación tienes información relevante extraída de la base de datos de respuestas oficiales de la empresa. "
+                "Utiliza este contexto para responder la pregunta del usuario de manera clara, profesional y natural. "
+                "No repitas literalmente el texto del contexto, sino que explica, resume o adapta la información para que sea útil y fácil de entender. "
+                "Si hay varias respuestas relevantes, integra la información de forma coherente. "
+                "Si el contexto no es suficiente, responde lo mejor posible según tu conocimiento general, pero prioriza siempre la información proporcionada.\n\n"
+                f"Contexto:\n{context_respuestas}\n\n"
+                f"Pregunta del usuario: {user_query}\n"
+                "Respuesta:"
             )
 
-        generator = pipeline(
-            "text-generation",
-            model       = model,
-            tokenizer   = tokenizer,
-            device      = "cpu",
-            max_new_tokens = 128,
-            do_sample   = True,
-            temperature = 0.7
-        )
-
-        st.subheader("Chatea con tu Asistente:")
-        user_input = st.text_input("Pregunta:")
-        if st.button("Enviar") and user_input:
-            prompt = f"<|prompt|>{user_input}<|response|>"
-            with st.spinner("Generando respuesta…"):
-                out = generator(prompt)
-            response = out[0]['generated_text'].split('<|response|>')[-1]
-            st.write(response)
-
-        st.write(f"Última actualización de datos: {time.ctime(os.path.getmtime(DATA_PATH))}")
+            response_llm = llm(prompt=prompt, max_tokens=256, temperature=0.85)
+            st.markdown(f"**Asistente:** {response_llm['choices'][0]['text'].strip()}")
 
     except Exception as e:
-        st.error("Error al procesar el archivo 'Data RFI.xlsx' o al cargar el modelo.")
         st.error(str(e))
         return
 
-    # Oculta menús de Streamlit
-    st.markdown(
-        """
-        <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    # Ocultar elementos de Streamlit
+    hide_st_style = """
+                <style>
+                #MainMenu {visibility: hidden;}
+                footer {visibility: hidden;}
+                header {visibility: hidden;}
+                </style>
+                """
+    st.markdown(hide_st_style, unsafe_allow_html=True)
+
     return True

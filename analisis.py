@@ -7,9 +7,6 @@ import pandas as pd
 from dateutil.relativedelta import *
 import seaborn as sns; sns.set_theme()
 import numpy as np
-import string
-import hashlib
-import openpyxl
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
@@ -17,22 +14,12 @@ import re
 import plotly.express as px
 from scipy.spatial.distance import cosine
 
-# Para Clustering
-# ==============================================================================
-from sklearn.cluster import AgglomerativeClustering
-from sklearn.metrics.pairwise import cosine_similarity
-
-# Modelo para embeddings (compatible con español)
-# ==============================================================================
-from sentence_transformers import SentenceTransformer, util
-
 # Preprocesado y modelado
 # ==============================================================================
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 import torch
-import pickle  # Para guardar y cargar el modelo
 
 # Descargar recursos necesarios de nltk (una sola vez)
 nltk.download('punkt')
@@ -57,6 +44,26 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
 LOGO_PATH = os.path.join(BASE_DIR, "Imagenes", "Dipro_Logo1.png")
 MODEL_PATH = os.path.join(BASE_DIR, "modelo.pkl")
+
+############################################
+# Función para Importar Data a Otros Módulos
+############################################
+@st.cache_data
+def get_data():
+    """
+    Devuelve el DataFrame principal usado en analisis.py.
+    """
+    df = pd.read_excel(DATA_PATH)
+    df = df.drop(columns=['Unnamed: 5', 'Unnamed: 6', 'Unnamed: 7', 'Unnamed: 8', 'Unnamed: 9'])
+    df = df.replace(to_replace=r'(\r\n|\r|\n|_x000D_\\n|_x000D_)', value=' ', regex=True)
+    df = df.applymap(lambda x: ' '.join(str(x).split()) if isinstance(x, str) else x)
+    df['ID'] = df['Formato'].apply(lambda texto: ''.join([palabra[0].upper() for palabra in str(texto).strip().split() if palabra]) if pd.notna(texto) else '')
+    if 'ID' in df.columns:
+        df.rename(columns={'ID': 'Registro'}, inplace=True)
+    else:
+        df.reset_index(inplace=True)
+        df.rename(columns={'index': 'Registro'}, inplace=True)
+    return df
 
 ############################################
 # Función Principal de la Página

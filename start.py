@@ -22,7 +22,7 @@ def createPage():
     #display = np.array(display)
     col1, col2, col3 = st.columns([1.5,1,1])
     with col2:
-        st.image(img, width=50)
+        st.image(img, width=100)
 
     st.markdown('Bienvenido a ***Aplicación DIPRO***, para identificar patrones semánticos en las preguntas del FDI y sus respuestas para encontrar relaciones semánticas entre los registros.')
 
