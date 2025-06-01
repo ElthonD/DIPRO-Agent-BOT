@@ -6,4 +6,4 @@ analisis2.py
 analisisori.py
 chatbot copy.py
 .env
-*.joblib
+Models/*.joblib
