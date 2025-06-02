@@ -3,7 +3,7 @@ import numpy as np
 from PIL import Image
 import os
 
-st.set_page_config(page_title="App DIPRO", layout="wide")  # <-- Mover aquí
+#st.set_page_config(page_title="App DIPRO", layout="wide")  # <-- Mover aquí
     
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 

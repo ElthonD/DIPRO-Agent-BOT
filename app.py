@@ -4,14 +4,16 @@ from PIL import Image
 from streamlit_option_menu import option_menu
 import start, analisis, chatbot  #Importar páginas acá
 
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Rutas relativas portables
 
 FAVICON_PATH = os.path.join(BASE_DIR, "Imagenes", "Dipro_Logo.ico")
 
- #### Páginas
+#### Páginas
 im = Image.open(FAVICON_PATH)
+st.set_page_config(page_title="App DIPRO", page_icon=im, layout="wide")  # Solo una vez y al inicio
 
 with open('style.css') as f:
     st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
@@ -32,6 +34,9 @@ selected = option_menu(
         "nav-link-selected": {"background-color": "tomato"},
     }
     )
+
+# Cambia el título visible según la página seleccionada
+st.title(f"App DIPRO - {selected}")
 
 if selected=="Inicio":
     start.createPage()
