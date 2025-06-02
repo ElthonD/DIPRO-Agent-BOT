@@ -12,7 +12,6 @@ FAVICON_PATH = os.path.join(BASE_DIR, "Imagenes", "Dipro_Logo.ico")
 
  #### Páginas
 im = Image.open(FAVICON_PATH)
-st.set_page_config(page_title='DIPRO', page_icon=im, layout="wide")
 
 with open('style.css') as f:
     st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
