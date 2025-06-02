@@ -1,68 +1,75 @@
 import os
-import streamlit as st
 import pandas as pd
-from llama_cpp import Llama
-import joblib
-import requests
+import re
+import pickle
+import streamlit as st
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
-LLM_MODEL_PATH = os.path.join(BASE_DIR, "Models", "llama-2-7b-chat.Q2_K.gguf")
-SEMANTIC_API_URL = "https://semantic-search-service.up.railway.app/search"
-def createPage():
-    @st.cache_data
-    def load_data():
-        df = pd.read_excel(DATA_PATH)
-        return df.astype(str)
+MODEL_PATH = os.path.join(BASE_DIR, "Models", "data_rfi_embeddings.pkl")
 
+def createPage():
+
+    # Cargar y limpiar datos
+    def cargar_y_limpiar_datos():
+        df = pd.read_excel(DATA_PATH)
+        df = df[["Pregunta", "Respuesta"]].dropna()
+        df["Pregunta"] = df["Pregunta"].apply(lambda x: re.sub(r"_x000D_\\n|\n", " ", str(x)).strip())
+        df["Respuesta"] = df["Respuesta"].apply(lambda x: re.sub(r"_x000D_\\n|\n", " ", str(x)).strip())
+        return df
+
+    # Generar embeddings y guardar en .pkl
+    def generar_y_guardar_embeddings(df):
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+        embeddings = model.encode(df["Pregunta"].tolist(), show_progress_bar=True)
+        with open(MODEL_PATH, "wb") as f:
+            pickle.dump({
+                "dataframe": df,
+                "embeddings": embeddings
+            }, f)
+
+    # Cargar modelo solo una vez
     @st.cache_resource
-    def get_llm():
-        return Llama(model_path=LLM_MODEL_PATH, n_ctx=128)
+    def load_model():
+        return SentenceTransformer("all-MiniLM-L6-v2")
+
+    # Cargar embeddings y dataframe
+    @st.cache_data
+    def load_data_embeddings():
+        if not os.path.exists(MODEL_PATH):
+            df = cargar_y_limpiar_datos()
+            generar_y_guardar_embeddings(df)
+        with open(MODEL_PATH, "rb") as f:
+            data = pickle.load(f)
+        return data["dataframe"], data["embeddings"]
+
+    # Buscar respuesta similar
+    def buscar_respuesta(pregunta_usuario, model, df, embeddings):
+        pregunta_vec = model.encode([pregunta_usuario])
+        similitudes = cosine_similarity(pregunta_vec, embeddings)[0]
+        idx_mejor = similitudes.argmax()
+        return df.iloc[idx_mejor]["Respuesta"]
 
     try:
+        st.set_page_config(page_title="Asistente Virtual DIPRO", layout="wide")
         st.title("🤖 Asistente Virtual DIPRO")
-        df = load_data()
-        if 'Respuesta' in df.columns:
-            texts = df['Respuesta'].tolist()
-        else:
-            st.error("No se encontró la columna 'Respuesta' en el archivo Excel.")
-            return
+        df, embeddings = load_data_embeddings()
+        model = load_model()
 
-        llm = get_llm()
-        st.subheader("Asistente Virtual")
-        user_query = st.text_input("Haz tu pregunta:")
+        pregunta_usuario = st.text_input("Haz tu pregunta relacionada al proyecto:")
+        if pregunta_usuario:
+            respuesta = buscar_respuesta(pregunta_usuario, model, df, embeddings)
+            st.markdown("### 📌 Respuesta:")
+            st.success(respuesta)
 
-        if user_query:
-            # Llama al microservicio para obtener los índices relevantes
-            response = requests.post(
-                SEMANTIC_API_URL,
-                json={"question": user_query, "top_k": 5}
-            )
-            if response.status_code == 200:
-                indices = response.json()["indices"]
-                context_respuestas = "\n".join([texts[i] for i in indices])
-            else:
-                context_respuestas = "No se pudo obtener contexto del microservicio."
-
-            prompt = (
-                "Eres un asistente experto en temas de la empresa DIPRO. "
-                "A continuación tienes información relevante extraída de la base de datos de respuestas oficiales de la empresa. "
-                "Utiliza este contexto para responder la pregunta del usuario de manera clara, profesional y natural. "
-                "No repitas literalmente el texto del contexto, sino que explica, resume o adapta la información para que sea útil y fácil de entender. "
-                "Si hay varias respuestas relevantes, integra la información de forma coherente. "
-                "Si el contexto no es suficiente, responde lo mejor posible según tu conocimiento general, pero prioriza siempre la información proporcionada.\n\n"
-                f"Contexto:\n{context_respuestas}\n\n"
-                f"Pregunta del usuario: {user_query}\n"
-                "Respuesta:"
-            )
-
-            response_llm = llm(prompt=prompt, max_tokens=256, temperature=0.85)
-            st.markdown(f"**Asistente:** {response_llm['choices'][0]['text'].strip()}")
-
+    except FileNotFoundError:
+        st.error("❌ No se encontró el archivo 'Data RFI.xlsx'.")
     except Exception as e:
-        st.error(str(e))
-        return
-
+        st.error(f"❌ Error inesperado: {str(e)}")
+    
     # Ocultar elementos de Streamlit
     hide_st_style = """
                 <style>
@@ -74,3 +81,4 @@ def createPage():
     st.markdown(hide_st_style, unsafe_allow_html=True)
 
     return True
+    
