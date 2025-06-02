@@ -1,10 +1,4 @@
 .qodo
-Analisis DIPRO.py
-Analisis DIPRO v2.py
-Analisis DIPRO v3.py
-analisis2.py
-analisisori.py
-chatbot copy.py
 .env
 Models/*.gguf
 Models/*.joblib
