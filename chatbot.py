@@ -6,6 +6,7 @@ import streamlit as st
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
+st.set_page_config(page_title="Asistente Virtual DIPRO", layout="wide")  # <-- Mover aquí
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, "Data", "Data RFI.xlsx")
