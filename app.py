@@ -35,9 +35,6 @@ selected = option_menu(
     }
     )
 
-# Cambia el título visible según la página seleccionada
-st.title(f"App DIPRO - {selected}")
-
 if selected=="Inicio":
     start.createPage()
 
