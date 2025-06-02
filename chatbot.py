@@ -53,7 +53,6 @@ def createPage():
         return df.iloc[idx_mejor]["Respuesta"]
 
     try:
-        st.set_page_config(page_title="Asistente Virtual DIPRO", layout="wide")
         st.title("🤖 Asistente Virtual DIPRO")
         df, embeddings = load_data_embeddings()
         model = load_model()
